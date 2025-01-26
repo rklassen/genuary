@@ -5,6 +5,7 @@ import math, random
 RESOLUTION    = 1024  # width and heigh of image
 DISPLACEMENT  = 96    # number of pixels 
 N_FROND       = 64    # number of triangles per frond
+COLOR_NOISE   = 8     # added (+/-) to each rgb component
 CENTRAL_COLOR = ( 100, 255, 128 )
 FROND_TIP     = ( 150,  96, 255 )
 TRUNK_BASE    = ( 120,  30, 200 )
@@ -63,12 +64,9 @@ def draw_line(n: int,
         x = t * t * displacement.v * DISPLACEMENT
         y = t * t * displacement.u * DISPLACEMENT
         theta = random.uniform(0, 2 * math.pi)
-        rgb = [ ]
-        for index in range(3):
-            component = int(begin.color[index] + t * float(end.color[index] - begin.color[index]))
-            if component > 255:
-                component = 255
-            rgb.append ( int ( component ) )
+        rgb = [min(255, max(0, int(begin.color[j] + t * (end.color[j] - begin.color[j]) 
+                                   + random.uniform(-COLOR_NOISE, COLOR_NOISE)))) 
+                                   for j in range(3)]
         leaflet_taper = math.sqrt(1.0 - t)
         s = max(0.0, 0.167 - t) / 0.167
         base_taper = 1.0 - s * s
@@ -133,4 +131,4 @@ for frond_index in range ( len ( end_uvs ) ):
     draw_line ( N_FROND, begin_frond, end_frond, this_displacement, 1.0 )
 # endregion fronds
 
-image.save('2025jan14.png')
+image.save('2025jan13.png')
