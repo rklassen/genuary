@@ -130,4 +130,11 @@ for frond_index in range ( len ( uvs_1 ) ):
     draw_line ( N_FROND, begin_frond, end_frond, this_displacement, 1.0 )
 # endregion fronds
 
-image.save('2025jan13.png')
+# region overlay
+overlay = Image.open('text.overlay.png')
+#overlay = overlay.resize((RESOLUTION, RESOLUTION))  # if needed
+image = image.convert("RGBA")
+blended_image = Image.alpha_composite(image, overlay)
+# endregion overlay
+
+blended_image.save('2025jan13.png')
