@@ -77,7 +77,7 @@ def draw_line(n: int,
 # endregion init
 
 # region bg
-BG_LINE_COUNT = 32.0
+BG_LINE_COUNT = 36.0
 BG_LINE_WDITH = RESOLUTION / BG_LINE_COUNT
 for line_index in range ( int ( BG_LINE_COUNT ) + 1):
     u = RESOLUTION * float ( line_index ) / BG_LINE_COUNT
