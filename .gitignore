@@ -1,5 +1,6 @@
 **/.DS_Store
 *.blend1
+*.frames
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
