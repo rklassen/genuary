@@ -1,16 +1,16 @@
 from PIL import Image, ImageDraw
 from math import sin, cos
-import random
-# region pseudostruct
+import os, random
+
+# pseudostruct
 class ColorCategory:
     def __init__(self, s_min, s_max, l_min, l_max):
         self.s_min = s_min
         self.s_max = s_max
         self.l_min = l_min
         self.l_max = l_max
-# endregion
 
-# region pseudoconst
+# pseudoconsts
 PALETTE_COLOR_MIN = 214
 PALETTE_COLOR_MAX = 218
 PALETTE_RADIUS = 0.025
@@ -23,14 +23,14 @@ jewel  = ColorCategory(0.73, 0.83, 0.56, 0.76)
 muted  = ColorCategory(0.01, 0.10, 0.70, 0.99)
 neon   = ColorCategory(0.63, 1.00, 0.82, 1.00)
 pastel = ColorCategory(0.14, 0.21, 0.89, 0.96)
-CATEGORIES = [earth, greys, jewel, muted, neon, pastel]
-# endregion
+CATEGORIES = [earth, jewel, muted, neon, pastel]
+paint_uv = [(0.1, 0.4), (0.2, 0.2), (0.4, 0.1), (0.63, 0.07)]
 
-# region init
+# init mask and def helper functions
 mask = Image.open('mask.png')
 u_max, v_max, mask_width = 1.0, mask.size[1] / mask.size[0], mask.size[0]
-new_image = Image.new('RGB', (IMG_WIDTH, int(IMG_WIDTH * v_max / u_max)), 'white')
-draw = ImageDraw.Draw(new_image)
+os.makedirs('.frames', exist_ok=True)
+index = 0
 
 def is_inside_mask(u, v, radius):  # radius in uv space
     theta = 0.0
@@ -50,23 +50,50 @@ def hsl_to_rgb(h, s, l):  # hue in radians; s, l in [0, 1]
     lookup = [(c, x, 0), (x, c, 0), (0, c, x), (0, x, c), (x, 0, c), (c, 0, x)]
     r, g, b = [int((c + m) * 255) for c in lookup[int(h // 1.047)]]
     return (r, g, b)
-#endregion
+
+def generate_palette(category: ColorCategory):
+    # generate a randomized palette of tetrad colors within this color category sat and lum ranges
+    # https://blog.matthewgove.com/2021/07/02/color-theory-a-simple-exercise-in-mathematics-and-graphic-design/
+    hue1 = random.uniform(0, 3.14)
+    hue2 = hue1 + 3.13
+    hue3 = hue1 + random.uniform(1/6, 5/6)
+    hue4 = (hue3 + 3.14) % 6.28
+    hues = [hue1, hue2, hue3, hue4]
+    random.shuffle(hues)
+    colors = [hsl_to_rgb(h,
+                            random.uniform(category.s_min, category.s_max),
+                            random.uniform(category.l_min, category.l_max)) for h in hues]
+    return colors
 
 # region draw palette
-grid = PALETTE_RADIUS / 2.25
-jitter = PALETTE_RADIUS / 8
-for v in range(0, int(v_max / grid)):
-    for u in range(0, int(u_max / grid)):
-        uj, vj = u * grid, v * grid
-        if not is_inside_mask(uj, vj, PALETTE_RADIUS):
-            continue
-        uj += random.uniform(-jitter, jitter)
-        vj += random.uniform(-jitter, jitter)
-        x, y = (int(uj * IMG_WIDTH), int(vj * IMG_WIDTH))
-        color = hsl_to_rgb(random.uniform(0, 1), 0.04, random.uniform(0.82, 0.86))
+for _ in range(6):
+    for category in CATEGORIES:
+        new_image = Image.new('RGB', (IMG_WIDTH, int(IMG_WIDTH * v_max / u_max)), 'white')
+        draw = ImageDraw.Draw(new_image)
+
+        grid = PALETTE_RADIUS / 2.25
+        jitter = PALETTE_RADIUS / 8
         radius = int(PALETTE_RADIUS * IMG_WIDTH)
-        draw.ellipse((x - radius, y - radius, x +
+        for v in range(0, int(v_max / grid)):
+            for u in range(0, int(u_max / grid)):
+                uj, vj = u * grid, v * grid
+                if not is_inside_mask(uj, vj, PALETTE_RADIUS):
+                    continue
+                uj += random.uniform(-jitter, jitter)
+                vj += random.uniform(-jitter, jitter)
+                x, y = (int(uj * IMG_WIDTH), int(vj * IMG_WIDTH))
+                color = hsl_to_rgb(random.uniform(0, 0.9), 0.04, random.uniform(0.82, 0.86))
+                draw.ellipse((x - radius, y - radius, x +
                      radius, y + radius), fill=color)
+        
+        colors = generate_palette(category)
+        for color, uv in zip(colors, paint_uv):
+            x, y = int(uv[0] * IMG_WIDTH), int(uv[1] * IMG_WIDTH)
+            diameter = int(0.2 * IMG_WIDTH)
+            draw.ellipse((x, y, x + diameter, y + diameter), fill=color)
+
+        filename = f'.frames/palette_{index:02d}.png'
+        new_image.save(filename)
+        print(f'Generated {filename}')
+        index += 1
 # endregion
-new_image.show()
-new_image.save('2025jan16.png')
