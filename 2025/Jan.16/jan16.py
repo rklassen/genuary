@@ -22,7 +22,7 @@ greys  = ColorCategory(0.00, 0.04, 0.00, 1.00)
 jewel  = ColorCategory(0.73, 0.83, 0.56, 0.76)
 muted  = ColorCategory(0.04, 0.10, 0.70, 0.80) # modified from article, then not used
 neon   = ColorCategory(0.63, 1.00, 0.82, 1.00)
-pastel = ColorCategory(0.14, 0.21, 0.82, 0.92) # modified from article
+pastel = ColorCategory(0.20, 0.35, 0.72, 0.86) # modified from article
 CATEGORIES = [earth, jewel, neon, pastel]
 paint_uv = [(0.1, 0.4), (0.2, 0.2), (0.4, 0.1), (0.63, 0.07)]
 
@@ -97,3 +97,10 @@ for _ in range(6):
         new_image.save(filename)
         print(f'Generated {filename}')
         index += 1
+
+# combine frames into animated gif
+frames = []
+for i in range(index):
+    frame = Image.open(f'.frames/palette_{i:02d}.png')
+    frames.append(frame)
+frames[0].save('2025jan16.gif', save_all=True, append_images=frames[1:], duration=1150, loop=0)
