@@ -20,10 +20,10 @@ IMG_WIDTH = 1024
 earth  = ColorCategory(0.36, 0.41, 0.36, 0.77)
 greys  = ColorCategory(0.00, 0.04, 0.00, 1.00)
 jewel  = ColorCategory(0.73, 0.83, 0.56, 0.76)
-muted  = ColorCategory(0.01, 0.10, 0.70, 0.99)
+muted  = ColorCategory(0.04, 0.10, 0.70, 0.80) # modified from article, then not used
 neon   = ColorCategory(0.63, 1.00, 0.82, 1.00)
-pastel = ColorCategory(0.14, 0.21, 0.89, 0.96)
-CATEGORIES = [earth, jewel, muted, neon, pastel]
+pastel = ColorCategory(0.14, 0.21, 0.82, 0.92) # modified from article
+CATEGORIES = [earth, jewel, neon, pastel]
 paint_uv = [(0.1, 0.4), (0.2, 0.2), (0.4, 0.1), (0.63, 0.07)]
 
 # init mask and def helper functions
@@ -54,15 +54,15 @@ def hsl_to_rgb(h, s, l):  # hue in radians; s, l in [0, 1]
 def generate_palette(category: ColorCategory):
     # generate a randomized palette of tetrad colors within this color category sat and lum ranges
     # https://blog.matthewgove.com/2021/07/02/color-theory-a-simple-exercise-in-mathematics-and-graphic-design/
-    hue1 = random.uniform(0, 3.14)
-    hue2 = hue1 + 3.13
-    hue3 = hue1 + random.uniform(1/6, 5/6)
-    hue4 = (hue3 + 3.14) % 6.28
-    hues = [hue1, hue2, hue3, hue4]
+    hue_00 = random.uniform(0, 3.14)
+    hue_01 = hue_00 + 3.13
+    hue_02 = hue_00 + random.uniform(3.14/6, 5*3.14/6)
+    hue_03 = (hue_02 + 3.14) % 6.28
+    hues = [hue_00, hue_01, hue_02, hue_03]
     random.shuffle(hues)
-    colors = [hsl_to_rgb(h,
-                            random.uniform(category.s_min, category.s_max),
-                            random.uniform(category.l_min, category.l_max)) for h in hues]
+    colors = [hsl_to_rgb(hue,
+                         random.uniform(category.s_min, category.s_max),
+                         random.uniform(category.l_min, category.l_max)) for hue in hues]
     return colors
 
 # region draw palette
@@ -82,9 +82,10 @@ for _ in range(6):
                 uj += random.uniform(-jitter, jitter)
                 vj += random.uniform(-jitter, jitter)
                 x, y = (int(uj * IMG_WIDTH), int(vj * IMG_WIDTH))
-                color = hsl_to_rgb(random.uniform(0, 0.9), 0.04, random.uniform(0.82, 0.86))
-                draw.ellipse((x - radius, y - radius, x +
-                     radius, y + radius), fill=color)
+                l_min = 1.0 - category.l_max
+                l_max = 0.5 * (l_min + 1.0 - category.l_min)
+                color = hsl_to_rgb(random.uniform(0, 0.9), 0.04, random.uniform(l_min, l_max))
+                draw.ellipse((x - radius, y - radius, x + radius, y + radius), fill=color)
         
         colors = generate_palette(category)
         for color, uv in zip(colors, paint_uv):
@@ -96,4 +97,3 @@ for _ in range(6):
         new_image.save(filename)
         print(f'Generated {filename}')
         index += 1
-# endregion
