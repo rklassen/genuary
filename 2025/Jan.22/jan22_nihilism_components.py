@@ -3,6 +3,8 @@ from PIL import ImageDraw
 BLOCK_WIDTH = 16
 BLOCK_HEIGHT = 16
 
+# open source original photo by ehtan dow on unsplash 
+# https://unsplash.com/photos/green-trees-during-sunrise-2JLN11-aHmM
 source_image = Image.open('2025/Jan.22/ethan-dow.webp')
 source_pixels = source_image.load()
 # component is 0 for red, 1 for green, 2 for blue
