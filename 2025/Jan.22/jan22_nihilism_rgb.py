@@ -19,9 +19,7 @@ from PIL import Image
 BLOCK_WIDTH = 64
 BLOCK_HEIGHT = 64
 
-# open source original photo by ehtan dow on unsplash 
-# https://unsplash.com/photos/green-trees-during-sunrise-2JLN11-aHmM
-source_image = Image.open('2025/Jan.22/ethan-dow.webp')
+source_image = Image.open('2025/Jan.22/source_img/ling_hua.webp')
 source_pixels = source_image.load()
 result_width = (source_image.width // BLOCK_WIDTH) * BLOCK_WIDTH
 result_height = (source_image.height // BLOCK_HEIGHT) * BLOCK_HEIGHT
@@ -85,7 +83,7 @@ while block_size >= 4:
                 block_height=this_block_height
             )
     
-    output_filename = f'2025/Jan.22/nihilismcompression_block_size_{block_size:02d}.png'
+    output_filename = f'2025/Jan.22/output_img/rgb_block_size_{block_size:02d}.png'
     result_image.save(output_filename)
     print(f'Saved {output_filename}')
     block_size //= 2
