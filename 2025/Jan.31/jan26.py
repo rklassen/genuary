@@ -18,7 +18,7 @@ components_colors = {
 }   
 
 EDGE_SCALAR = 4
-EDGE_THRESHOLD = 170
+EDGE_THRESHOLD = 168
 for component, color in components_colors.items():
     pixels = np.array(components[component])
     normalized = pixels / 255.0
@@ -34,7 +34,7 @@ for component, color in components_colors.items():
     edges = np.zeros_like(pixels, dtype=np.uint8)
     total_rows = pixels.shape[0] - 1
     progress_bar_length = 32
-
+    print(f'Detecting edges for {component} component...')
     for y in range(total_rows):
         for x in range(pixels.shape[1] - 1):
             diff_down = abs(int(pixels[y, x]) - int(pixels[y + 1, x]))
@@ -59,7 +59,7 @@ for component, color in components_colors.items():
     sorted_pixels = np.array(components[component])
     total_columns = edges.shape[1]
     progress_bar_length = 32
-
+    print(f'Sorting pixels for column {x + 1} of {total_columns}...')
     for x in range(total_columns):
         start_idx = None
         for y in range(edges.shape[0]):
