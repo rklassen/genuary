@@ -57,12 +57,12 @@ for EDGE_THRESHOLD in EDGE_THRESHOLDS:
 
         print()  # Move to the next line after the progress bar is complete
 
-        edges_image = Image.fromarray(edges, 'L')
-        edges_path = f'2025/Jan.31/edges_{component}.webp'
-        edges_image.save(edges_path, 'WEBP', quality=50)
+        #edges_image = Image.fromarray(edges, 'L')
+        #edges_path = f'2025/Jan.31/edges_{component}.webp'
+        #edges_image.save(edges_path, 'WEBP', quality=50)
 
         sorted_pixels = np.array(components[component])
-        
+        print ('sorting pixels vertically...')
         for x in range(pixels.shape[1]):
             y = 0
             while y < pixels.shape[0]:
@@ -80,7 +80,7 @@ for EDGE_THRESHOLD in EDGE_THRESHOLDS:
                 # Sort the range of white pixels
                 if start < end:
                     sorted_pixels[start:end, x] = np.sort(pixels[start:end, x])
-
+                    start = end
             # Print progress bar
             progress = (y + 1) / total_rows
             num_dots = int(progress * progress_bar_length)
@@ -89,8 +89,37 @@ for EDGE_THRESHOLD in EDGE_THRESHOLDS:
 
         print()  # Move to the next line after the progress bar is complete
 
+        second_sort_pixels = np.zeros_like(sorted_pixels)
+        print ('sorting pixels horizontally...')
+        for y in range(pixels.shape[0]):
+            x = 0
+            while x < pixels.shape[1]:
+            # Find the first white pixel
+                while x < pixels.shape[1] and edges[y, x] == 0:
+                    second_sort_pixels[y, x] = sorted_pixels[y, x]
+                    x += 1
+
+                start = x
+                # Find the first black pixel
+                while x < pixels.shape[1] and edges[y, x] == 255:
+                    x += 1
+
+                end = x
+                # Sort the range of white pixels
+                if start < end:
+                    second_sort_pixels[y, start:end] = np.sort(sorted_pixels[y, start:end])
+                    start = end
+
+            # Print progress bar
+            progress = (x + 1) / pixels.shape[1]
+            num_dots = int(progress * progress_bar_length)
+            progress_bar = '[' + '.' * num_dots + ' ' * (progress_bar_length - num_dots) + ']'
+            print(f'\r{progress_bar}', end='')
+
+        print()  # Move to the next line after the progress bar is complete
+
         sorted_component_pixels = np.zeros((cmyk_image.size[1], cmyk_image.size[0], 3), dtype=np.uint8)
-        normalized_sorted = sorted_pixels / 255.0
+        normalized_sorted = second_sort_pixels / 255.0
         for i in range(3):
             sorted_component_pixels[..., i] = (1 - normalized_sorted) * 255 + normalized_sorted * color[i] * 255
 
