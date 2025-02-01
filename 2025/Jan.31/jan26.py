@@ -5,13 +5,13 @@ import numpy as np
 
 # Rafael Leao https://unsplash.com/@raflfc
 # https://unsplash.com/photos/man-and-woman-sitting-on-wooden-fence-near-brown-and-green-palm-tree-YqCB5Bd1TcI
-# image_path = '2025/Jan.31/rafael-leao.webp'
+image_path = '2025/Jan.31/rafael-leao.webp'
 # image_path = '2025/Jan.31/galaxy egg.webp'
 # image_path = '2025/Jan.22/source_img/neon-wang.webp'
 # image_path = '2025/Jan.22/source_img/fahmi-fakhrudin.webp'
 # Fujiphilm https://unsplash.com/@fujiphilm
 # https://unsplash.com/photos/a-computer-desk-with-a-keyboard-mouse-and-coffee-mug--PJH9Ii1RbU
-image_path = '2025/Jan.31/fujiphilm.webp'
+# image_path = '2025/Jan.31/fujiphilm.webp'
 image = Image.open(image_path)
 
 cmyk_image = image.convert('CMYK')
@@ -24,7 +24,7 @@ components_colors = {
 }   
 
 EDGE_SCALAR = 4
-EDGE_THRESHOLDS = [30, 64, 128, 170]
+EDGE_THRESHOLDS = [8, 16, 32, 64, 128, 170]
 for EDGE_THRESHOLD in EDGE_THRESHOLDS:
     print()
     print(f'EDGE THRESHOLD: {EDGE_THRESHOLD}')
@@ -58,26 +58,28 @@ for EDGE_THRESHOLD in EDGE_THRESHOLDS:
         print()  # Move to the next line after the progress bar is complete
 
         edges_image = Image.fromarray(edges, 'L')
-        edges_path = f'2025/Jan.31/edges_{component}_thresh{EDGE_THRESHOLD}.webp'
+        edges_path = f'2025/Jan.31/edges_{component}.webp'
         edges_image.save(edges_path, 'WEBP', quality=50)
 
         sorted_pixels = np.array(components[component])
-        total_rows = edges.shape[0]
-        progress_bar_length = 32
-        print(f'Sorting pixels for {component}')
-        for y in range(total_rows):
-            start_idx = None
-            for x in range(edges.shape[1]):
-                if edges[y, x] == 255:
-                    if start_idx is None:
-                        start_idx = x
-                else:
-                    if start_idx is not None:
-                        end_idx = x
-                        sorted_pixels[y, start_idx:end_idx] = np.sort(sorted_pixels[y, start_idx:end_idx])
-                        start_idx = None
-            if start_idx is not None:
-                sorted_pixels[y, start_idx:] = np.sort(sorted_pixels[y, start_idx:])
+        
+        for x in range(pixels.shape[1]):
+            y = 0
+            while y < pixels.shape[0]:
+                # Find the first white pixel
+                while y < pixels.shape[0] and edges[y, x] == 0:
+                    sorted_pixels[y, x] = pixels[y, x]
+                    y += 1
+
+                start = y
+                # Find the first black pixel
+                while y < pixels.shape[0] and edges[y, x] == 255:
+                    y += 1
+
+                end = y
+                # Sort the range of white pixels
+                if start < end:
+                    sorted_pixels[start:end, x] = np.sort(pixels[start:end, x])
 
             # Print progress bar
             progress = (y + 1) / total_rows
@@ -93,13 +95,13 @@ for EDGE_THRESHOLD in EDGE_THRESHOLDS:
             sorted_component_pixels[..., i] = (1 - normalized_sorted) * 255 + normalized_sorted * color[i] * 255
 
         sorted_component_image = Image.fromarray(sorted_component_pixels, 'RGB')
-        sorted_component_path = f'2025/Jan.31/sorted_{component}_thresh{EDGE_THRESHOLD}.webp'
+        sorted_component_path = f'2025/Jan.31/sorted_{component}.webp'
         sorted_component_image.save(sorted_component_path, 'WEBP', quality=50)
 
     # Combine the sorted component images by multiplying the colors together
-    sorted_c = Image.open(f'2025/Jan.31/sorted_c_thresh{EDGE_THRESHOLD}.webp')
-    sorted_m = Image.open(f'2025/Jan.31/sorted_m_thresh{EDGE_THRESHOLD}.webp')
-    sorted_y = Image.open(f'2025/Jan.31/sorted_y_thresh{EDGE_THRESHOLD}.webp')
+    sorted_c = Image.open(f'2025/Jan.31/sorted_c.webp')
+    sorted_m = Image.open(f'2025/Jan.31/sorted_m.webp')
+    sorted_y = Image.open(f'2025/Jan.31/sorted_y.webp')
 
     sorted_c_pixels = np.array(sorted_c) / 255.0
     sorted_m_pixels = np.array(sorted_m) / 255.0
