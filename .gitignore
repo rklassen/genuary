@@ -1,3 +1,5 @@
+# ignore all folders called `frames`
+*frames/ 
 2025/Jan.31/frames
 **/.DS_Store
 *.blend1
