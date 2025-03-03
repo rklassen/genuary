@@ -13,6 +13,7 @@ Same as Feb.05 but with discrete cosine rather than fast fourier transform.
 
 ## Feb.05 Downsampling after FFT
 Experimenting with results generated from performing FFT on the input image, manipulating the FFT output values, then performing. 
+![Example frame](./Feb.05/output/frame_016.webp)
 
 The narrowest question answered in this case is what results from performing a mipmap operation on the post-FFT values, excluding a margin on the perimeter of varying width.
 
