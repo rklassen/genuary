@@ -5,22 +5,23 @@
 
 ## Feb.18 Screentone
 Separate image into chroma and luma, downsample luma and split into cmy cannels, blur, upres, and screen the cmy values. See March 2 for compositing.
-[Screened cyan](./Feb.18/debug/step_06_screened_c.png)
+![Screened cyan](./Feb.18/debug/step_06_screened_c.png)
 
 ## Feb.06 DCT Compression
 Same as Feb.05 but with discrete cosine rather than fast fourier transform.
 ![Example frame](./Feb.06/output/frame_016.webp)
 
 ## Feb.05 Downsampling after FFT
-Experimenting with results generated from performing FFT on the input image, manipulating the FFT output values, then performing. 
+Experimenting with results generated from performing FFT on the input image, manipulating the FFT output values, then performing an inverse fft on the result to convert back to rgb.
 ![Example frame](./Feb.05/output/frame_016.webp)
 
 The narrowest question answered in this case is what results from performing a mipmap operation on the post-FFT values, excluding a margin on the perimeter of varying width.
 
-More broadly, the question is (1) whether tranformations on raw FFT output are intuitive, 
+More broadly, the questions are (1) whether tranformations on raw FFT output are intuitive, which they do not seem to be, and (2) whether it can be nonetheless used to create interesting results.
 
 ## Jan.31 pixel sorting
 [Video](./Jan.31/2025jan31.mp4)
+
 ![Desk](./Jan.31/output/2025jan31.gif) 
 ![Neon Wang](./Jan.31/output/2025jan31-neonuv.gif)
 
