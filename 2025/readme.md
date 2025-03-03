@@ -1,7 +1,7 @@
 # Genuary 2025 and experiments ex post
 
 ## Mar.2 Compositing
-[Composited](./Mar.02/output/composite_2.png)
+![Composited](./Mar.02/output/composite_2.png)
 
 ## Feb.18 Screentone
 Separate image into chroma and luma, downsample luma and split into cmy cannels, blur, upres, and screen the cmy values. See March 2 for compositing.
