@@ -25,8 +25,8 @@ for index in range(3):
     ch.convert("L").save(f"./2025/Mar.10/debug/source_{name}.png")
     this_dct = dctn(numpy.array(ch, dtype=float))
     dct_data.append(this_dct)
+    this_dct_normalized = (this_dct - this_dct.min()) / (this_dct.max() - this_dct.min()) * 255
     Image.fromarray(this_dct.astype(numpy.uint8)).save(f"./2025/Mar.10/debug/dct_{name}.png")
-    #this_dct_normalized = (this_dct - this_dct.min()) / (this_dct.max() - this_dct.min()) * 255
 
 
 TOTAL_FRAMES = 256 // 3
@@ -34,13 +34,13 @@ for distance in range(1, TOTAL_FRAMES):
     this_dct_data = copy.deepcopy(dct_data)
     for x in range(int(width/2)):
         for y in range(int(height/2)):
-            if x + y <= distance:
+            if x + y >= distance:
                 for index, channel in enumerate(this_dct_data[1:]):
                     channel[x, y] = 0
                     channel[width - x - 1, y] = 0
                     channel[x, height - y - 1] = 0
                     channel[width - x - 1, height - y - 1] = 0
-            if x + y <= 3 * distance:
+            if x + y >= 2 * distance:
                 this_dct_data[0][x, y] = 0
                 this_dct_data[0][width - x -1, y] = 0
                 this_dct_data[0][x, height - y -1] = 0
@@ -48,7 +48,8 @@ for distance in range(1, TOTAL_FRAMES):
     
     idct_data = [ ]
     for channel_index in range(3):
-        idct_data.append(idctn(this_dct_data[channel_index]).clip(0, 255).astype(numpy.uint8))
+        this_idct = idctn(this_dct_data[channel_index])
+        idct_data.append(this_idct.clip(0, 255).astype(numpy.uint8))
 
     #idct_data[0][:] = 128
 
