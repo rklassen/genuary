@@ -1,32 +1,50 @@
-import numpy as np
-from mpl_toolkits.mplot3d import Axes3D
-def plot_quantization_surface(quant_levels, title, filename, chroma=True):
-    x = np.arange(len(quant_levels[0]))
-    y = np.arange(len(quant_levels))
-    x, y = np.meshgrid(x, y)
-    z = np.array(quant_levels)
+import numpy
+from matplotlib import pyplot
 
-    fig = plt.figure(figsize=(12.8, 7.2))
-    ax = fig.add_subplot(111, projection='3d')
+def plot_quantization_surface(quant_levels, title, filename, fontname='General Sans'):
+    
+    x = numpy.arange(len(quant_levels[0]))
+    y = numpy.arange(len(quant_levels))
+    x, y = numpy.meshgrid(x, y)
+    z = numpy.array(quant_levels)
+
+    fig = pyplot.figure(figsize=(10.0, 10.0))
+    ax = fig.add_subplot(111, projection='3d', proj_type='persp')
+    ax.dist = 7  # Decrease the distance to increase perspective effect
     label_size = 20
 
-    ax.set_title(title, color='#6dead6', fontsize=int(1.75*float(label_size)))
-    ax.set_xlabel('s (frequency)', color='#6dead6', fontsize=label_size)
-    ax.set_ylabel('t (frequency)', color='#6dead6', fontsize=label_size)
-    ax.set_zlabel('Quantization Level', color='#6dead6', fontsize=label_size)
-    surface = ax.plot_surface(y, -x, z, cmap='viridis', edgecolor='k', linewidth=0.2, shade=True)
+    # Check if the specified font exists, otherwise use a fallback
+    available_fonts = ['Aptos', 'Roboto', 'Meno', 'Consolas', 'Liberation Sans']
+    if fontname not in pyplot.rcParams['font.family']:
+        for fallback_font in available_fonts:
+            if fallback_font in pyplot.rcParams['font.family']:
+                fontname = fallback_font
+                break
+
+    ax.set_title(title, color='#6dead6', fontsize=int(1.75*float(label_size)), fontname=fontname)
+    ax.set_xlabel('s (frequency)', color='#6dead6', fontsize=label_size, fontname=fontname)
+    ax.set_ylabel('t (frequency)', color='#6dead6', fontsize=label_size, fontname=fontname)
+    ax.set_zlabel('Quantization Level', color='#6dead6', fontsize=label_size, fontname=fontname)
+    # surface = ax.plot_surface(y, -x, z, cmap='viridis', edgecolor='k', linewidth=0.2, shade=True)
 
     # Add contour lines to the z-axis
-    ax.contour(y, -x, z, zdir='z', offset=z.min(), cmap='viridis', linestyles="solid")
+    max_value = max(max(row) for row in quant_levels)
+    _ = ax.contour3D(y, -x, z, levels=int(max_value), cmap='viridis', linestyles="solid")
+    # Add a 3D bar chart to visualize the quantization levels
+    for i in range(len(quant_levels)):
+        for j in range(len(quant_levels[i])):
+            ax.bar3d(y[i, j], -x[i, j], 0, 0.5, 0.5, z[i, j], shade=True, color=pyplot.cm.viridis(z[i, j] / z.max()))
 
     # Add labels per line in the z dimension with spacing
-    z_ticks = np.linspace(z.min(), z.max(), len(quant_levels))
+    z_ticks = numpy.linspace(z.min(), z.max(), len(quant_levels))
     ax.set_zticks(z_ticks)
-    ax.set_zticklabels([f"{tick:.1f}" for tick in z_ticks], fontsize=int(label_size / 1.75), color='#6dead6', verticalalignment='center_baseline')
+    ax.set_zticklabels([f"{tick:.1f}" for tick in z_ticks], fontsize=int(label_size / 1.75), color='#6dead6', fontname=fontname, verticalalignment='center_baseline')
 
-    # Adjust minor line labels to charcoal
-    for line in ax.zaxis.get_ticklines(minor=True):
-        line.set_color('charcoal')
+    # Adjust gridline colors
+    grid_color = '#555555'
+    ax.xaxis._axinfo['grid'].update({'color': grid_color})
+    ax.yaxis._axinfo['grid'].update({'color': grid_color})
+    ax.zaxis._axinfo['grid'].update({'color': grid_color})
 
     # cube backdrop
     ax.xaxis.set_pane_color((0, 0, 0, 1))
@@ -38,8 +56,8 @@ def plot_quantization_surface(quant_levels, title, filename, chroma=True):
     fig.patch.set_facecolor('black')
     ax.set_facecolor('black')
 
-    plt.savefig(filename, format='webp', facecolor=fig.get_facecolor())
-    plt.close()
+    pyplot.savefig(filename, format='webp', facecolor=fig.get_facecolor())
+    pyplot.close()
 
 
 # Quantization tables for JPEG encoding
@@ -92,8 +110,6 @@ if __name__ == "__main__":
     print("\nChrominance Quantization Levels:")
     for row in chrominance_levels:
         print(" ".join(f"{value:5.1f}" for value in row))
-
-    import matplotlib.pyplot as plt
 
     # Rotate the luma chart 90 degrees clockwise
     plot_quantization_surface(luminance_levels, "Number of Luma Quantization Levels", "./2025/Apr.01/luma.webp")
