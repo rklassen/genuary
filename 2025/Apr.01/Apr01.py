@@ -1,6 +1,5 @@
 import numpy as np
 from mpl_toolkits.mplot3d import Axes3D
-
 def plot_quantization_surface(quant_levels, title, filename, chroma=True):
     x = np.arange(len(quant_levels[0]))
     y = np.arange(len(quant_levels))
@@ -9,18 +8,31 @@ def plot_quantization_surface(quant_levels, title, filename, chroma=True):
 
     fig = plt.figure(figsize=(12.8, 7.2))
     ax = fig.add_subplot(111, projection='3d')
-    if chroma:
-        ax.set_title("Chrominance Quantization Surface", color='white')
-        ax.set_xlabel('X (Chroma)', color='white')
-        ax.set_ylabel('Y', color='white')
-        ax.set_zlabel('Quantization Level', color='white')
-        ax.plot_surface(y, -x, z, cmap='viridis', edgecolor='k')
-    else:
-        ax.set_title("Luminance Quantization Surface", color='white')
-        ax.set_xlabel('X (Luma)', color='white')
-        ax.set_ylabel('Y', color='white')
-        ax.set_zlabel('Quantization Level', color='white')
-        ax.plot_surface(y, -x, z, cmap='viridis', edgecolor='k')
+    label_size = 20
+
+    ax.set_title(title, color='#6dead6', fontsize=int(1.75*float(label_size)))
+    ax.set_xlabel('s (frequency)', color='#6dead6', fontsize=label_size)
+    ax.set_ylabel('t (frequency)', color='#6dead6', fontsize=label_size)
+    ax.set_zlabel('Quantization Level', color='#6dead6', fontsize=label_size)
+    surface = ax.plot_surface(y, -x, z, cmap='viridis', edgecolor='k', linewidth=0.2, shade=True)
+
+    # Add contour lines to the z-axis
+    ax.contour(y, -x, z, zdir='z', offset=z.min(), cmap='viridis', linestyles="solid")
+
+    # Add labels per line in the z dimension with spacing
+    z_ticks = np.linspace(z.min(), z.max(), len(quant_levels))
+    ax.set_zticks(z_ticks)
+    ax.set_zticklabels([f"{tick:.1f}" for tick in z_ticks], fontsize=int(label_size / 1.75), color='#6dead6', verticalalignment='center_baseline')
+
+    # Adjust minor line labels to charcoal
+    for line in ax.zaxis.get_ticklines(minor=True):
+        line.set_color('charcoal')
+
+    # cube backdrop
+    ax.xaxis.set_pane_color((0, 0, 0, 1))
+    ax.yaxis.set_pane_color((0, 0, 0, 1))
+    ax.zaxis.set_pane_color((0, 0, 0, 1))
+    ax.grid(color='gray', linestyle='--', linewidth=0.5)
 
     # Set dark mode background
     fig.patch.set_facecolor('black')
@@ -28,9 +40,10 @@ def plot_quantization_surface(quant_levels, title, filename, chroma=True):
 
     plt.savefig(filename, format='webp', facecolor=fig.get_facecolor())
     plt.close()
+
+
 # Quantization tables for JPEG encoding
 # These are standard quantization tables used in JPEG compression.
-
 
 # Luminance quantization table
 LUMINANCE_QUANT_TABLE = [
@@ -83,5 +96,5 @@ if __name__ == "__main__":
     import matplotlib.pyplot as plt
 
     # Rotate the luma chart 90 degrees clockwise
-    plot_quantization_surface(luminance_levels, "x Quantization Surface", "./2025/Apr.01/luma.webp")
-    plot_quantization_surface(chrominance_levels, "Chrominance Quantization Surface", "./2025/Apr.01/chroma.webp")
+    plot_quantization_surface(luminance_levels, "Number of Luma Quantization Levels", "./2025/Apr.01/luma.webp")
+    plot_quantization_surface(chrominance_levels, "Number of Chroma Quantization Levels", "./2025/Apr.01/chroma.webp")
