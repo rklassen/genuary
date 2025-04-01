@@ -1,8 +1,36 @@
 import numpy as np
 from mpl_toolkits.mplot3d import Axes3D
 
+def plot_quantization_surface(quant_levels, title, filename, chroma=True):
+    x = np.arange(len(quant_levels[0]))
+    y = np.arange(len(quant_levels))
+    x, y = np.meshgrid(x, y)
+    z = np.array(quant_levels)
+
+    fig = plt.figure(figsize=(12.8, 7.2))
+    ax = fig.add_subplot(111, projection='3d')
+    if chroma:
+        ax.set_title("Chrominance Quantization Surface", color='white')
+        ax.set_xlabel('X (Chroma)', color='white')
+        ax.set_ylabel('Y', color='white')
+        ax.set_zlabel('Quantization Level', color='white')
+        ax.plot_surface(y, -x, z, cmap='viridis', edgecolor='k')
+    else:
+        ax.set_title("Luminance Quantization Surface", color='white')
+        ax.set_xlabel('X (Luma)', color='white')
+        ax.set_ylabel('Y', color='white')
+        ax.set_zlabel('Quantization Level', color='white')
+        ax.plot_surface(y, -x, z, cmap='viridis', edgecolor='k')
+
+    # Set dark mode background
+    fig.patch.set_facecolor('black')
+    ax.set_facecolor('black')
+
+    plt.savefig(filename, format='webp', facecolor=fig.get_facecolor())
+    plt.close()
 # Quantization tables for JPEG encoding
 # These are standard quantization tables used in JPEG compression.
+
 
 # Luminance quantization table
 LUMINANCE_QUANT_TABLE = [
@@ -53,34 +81,6 @@ if __name__ == "__main__":
         print(" ".join(f"{value:5.1f}" for value in row))
 
     import matplotlib.pyplot as plt
-
-    def plot_quantization_surface(quant_levels, title, filename, chroma=True):
-        x = np.arange(len(quant_levels[0]))
-        y = np.arange(len(quant_levels))
-        x, y = np.meshgrid(x, y)
-        z = np.array(quant_levels)
-
-        fig = plt.figure(figsize=(12.8, 7.2))
-        ax = fig.add_subplot(111, projection='3d')
-        if chroma:
-            ax.set_title("Chrominance Quantization Surface", color='white')
-            ax.set_xlabel('X (Chroma)', color='white')
-            ax.set_ylabel('Y', color='white')
-            ax.set_zlabel('Quantization Level', color='white')
-            ax.plot_surface(y, -x, z, cmap='viridis', edgecolor='k')
-        else:
-            ax.set_title("Luminance Quantization Surface", color='white')
-            ax.set_xlabel('X (Luma)', color='white')
-            ax.set_ylabel('Y', color='white')
-            ax.set_zlabel('Quantization Level', color='white')
-            ax.plot_surface(y, -x, z, cmap='viridis', edgecolor='k')
-
-        # Set dark mode background
-        fig.patch.set_facecolor('black')
-        ax.set_facecolor('black')
-
-        plt.savefig(filename, format='webp', facecolor=fig.get_facecolor())
-        plt.close()
 
     # Rotate the luma chart 90 degrees clockwise
     plot_quantization_surface(luminance_levels, "x Quantization Surface", "./2025/Apr.01/luma.webp")
