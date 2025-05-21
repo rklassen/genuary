@@ -53,7 +53,7 @@ func main() {
 			log.Fatalf("Failed to create frames directory: %v", err)
 		}
 
-		for i := range totalFrames {
+		for i := 0; i < totalFrames; i++ {
 			frameContent := utils.GenerateNoiseFrame(i, totalFrames)
 			framePath := filepath.Join(framesDir, fmt.Sprintf("frame_%02d.svg", i))
 			if e := os.WriteFile(framePath, []byte(frameContent), 0644); e != nil {

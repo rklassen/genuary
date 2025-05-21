@@ -73,6 +73,14 @@ func CreateMP4FromFrames(config Config) error {
 	if err := os.MkdirAll(config.OutputFolder, 0755); err != nil {
 		return fmt.Errorf("failed to create output directory: %w", err)
 	}
+
+	// Make sure temp folder is created with absolute path to avoid any path issues
+	absTemp, err := filepath.Abs(config.TempFolder)
+	if err != nil {
+		return fmt.Errorf("failed to get absolute path for temp folder: %w", err)
+	}
+	config.TempFolder = absTemp
+
 	if err := os.MkdirAll(config.TempFolder, 0755); err != nil {
 		return fmt.Errorf("failed to create temp directory: %w", err)
 	}
@@ -177,9 +185,16 @@ func createMP4WithFFmpeg(outputPath string, pngFilePaths []string, width, height
 
 	// Write frame paths to the list file
 	for _, pngPath := range pngFilePaths {
+		// For FFmpeg concat protocol, paths should be relative or absolute but usable by FFmpeg
+		// We'll use absolute paths for clarity
+		absPath, err := filepath.Abs(pngPath)
+		if err != nil {
+			frameListFile.Close()
+			return fmt.Errorf("error getting absolute path: %w", err)
+		}
 		// FFmpeg expects paths with escaped single quotes
-		escapedPath := strings.ReplaceAll(pngPath, "'", "\\'")
-		_, err := frameListFile.WriteString(fmt.Sprintf("file '%s'\n", escapedPath))
+		escapedPath := strings.ReplaceAll(absPath, "'", "\\'")
+		_, err = frameListFile.WriteString(fmt.Sprintf("file '%s'\n", escapedPath))
 		if err != nil {
 			frameListFile.Close()
 			return fmt.Errorf("error writing to frame list: %w", err)
