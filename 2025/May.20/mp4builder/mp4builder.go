@@ -260,7 +260,28 @@ func createMP4WithDirectPattern(outputPath string, pngDir string, width, height,
 		return fmt.Errorf("error creating file list: %w", err)
 	}
 
-	// Write all PNG files in order to the list
+	// Create a loop that goes forward and backward with pauses at extremes
+	fmt.Println("Creating forward-backward loop with pauses at extremes...")
+
+	// Forward sequence with pause at the start
+	firstFile := pngFiles[0]
+	firstFilePath := filepath.Join(pngDir, firstFile)
+	firstAbsPath, err := filepath.Abs(firstFilePath)
+	if err != nil {
+		file.Close()
+		return fmt.Errorf("error getting absolute path: %w", err)
+	}
+
+	// Add 4 frames of the first frame for a pause at the start
+	for i := 0; i < 4; i++ {
+		_, err = file.WriteString(fmt.Sprintf("file '%s'\nduration %f\n", firstAbsPath, 1.0/float64(fps)))
+		if err != nil {
+			file.Close()
+			return fmt.Errorf("error writing to file list: %w", err)
+		}
+	}
+
+	// Forward sequence
 	for _, pngFile := range pngFiles {
 		pngPath := filepath.Join(pngDir, pngFile)
 		absPath, err := filepath.Abs(pngPath)
@@ -275,6 +296,48 @@ func createMP4WithDirectPattern(outputPath string, pngDir string, width, height,
 			file.Close()
 			return fmt.Errorf("error writing to file list: %w", err)
 		}
+	}
+
+	// Add 4 frames of the last frame for a pause at the end
+	lastFile := pngFiles[len(pngFiles)-1]
+	lastFilePath := filepath.Join(pngDir, lastFile)
+	lastAbsPath, err := filepath.Abs(lastFilePath)
+	if err != nil {
+		file.Close()
+		return fmt.Errorf("error getting absolute path: %w", err)
+	}
+
+	for i := 0; i < 3; i++ {
+		_, err = file.WriteString(fmt.Sprintf("file '%s'\nduration %f\n", lastAbsPath, 1.0/float64(fps)))
+		if err != nil {
+			file.Close()
+			return fmt.Errorf("error writing to file list: %w", err)
+		}
+	}
+
+	// Backward sequence (excluding first and last frame to avoid duplicates)
+	for i := len(pngFiles) - 2; i > 0; i-- {
+		pngFile := pngFiles[i]
+		pngPath := filepath.Join(pngDir, pngFile)
+		absPath, err := filepath.Abs(pngPath)
+		if err != nil {
+			file.Close()
+			return fmt.Errorf("error getting absolute path: %w", err)
+		}
+
+		// Format each entry according to FFmpeg concat demuxer requirements
+		_, err = file.WriteString(fmt.Sprintf("file '%s'\nduration %f\n", absPath, 1.0/float64(fps)))
+		if err != nil {
+			file.Close()
+			return fmt.Errorf("error writing to file list: %w", err)
+		}
+	}
+
+	// One more first frame to complete the loop
+	_, err = file.WriteString(fmt.Sprintf("file '%s'\nduration %f\n", firstAbsPath, 1.0/float64(fps)))
+	if err != nil {
+		file.Close()
+		return fmt.Errorf("error writing to file list: %w", err)
 	}
 	file.Close()
 
