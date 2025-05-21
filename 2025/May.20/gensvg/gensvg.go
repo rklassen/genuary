@@ -64,7 +64,7 @@ func Star() string {
 
 	// Create the star pattern by inserting a midpoint to each end then scaling towards origin
 	pathData := ""
-	for i := 0; i < sides; i++ {
+	for i := range sides {
 
 		start := vertices[i]
 		end := vertices[(i+1)%sides] // Wrap around to the first vertex at the end

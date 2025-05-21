@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"genuary/may20/gensvg"
+	"genuary/may20/mp4builder"
 	"genuary/may20/utils"
 	"log"
 	"os"
@@ -11,7 +12,7 @@ import (
 
 func main() {
 	// Ensure directories exists
-	outputDir := "output"
+	outputDir := "_output"
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
 		log.Fatalf("Failed to create output directory: %v", err)
 	}
@@ -61,5 +62,19 @@ func main() {
 			fmt.Printf("Frame %d/%d saved to %s\n", i+1, totalFrames, framePath)
 		}
 		fmt.Println(utils.TimeInfo())
+
+		// Create MP4 from the generated frames
+		fmt.Println("Creating MP4 video from frames...")
+		videoConfig := mp4builder.Config{
+			FramesFolder: framesDir,
+			OutputFolder: outputDir,
+			TempFolder:   filepath.Join(outputDir, "temp"),
+			OutputVideo:  filepath.Join(outputDir, "lawful-chaotic.mp4"),
+			FPS:          16,
+		}
+
+		if err := mp4builder.CreateMP4FromFrames(videoConfig); err != nil {
+			log.Fatalf("Failed to create MP4: %v", err)
+		}
 	}
 }

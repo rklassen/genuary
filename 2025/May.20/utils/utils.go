@@ -52,19 +52,18 @@ func GenerateNoiseFrame(frameNumber int, totalFrames int) string {
 	const (
 		width, height    = 256, 256
 		centerX, centerY = 128, 128
-		sides            = 7   // Septagon has 7 sides
-		ratio            = 0.6 // Ratio for scaling middle points inward
+		sides            = 7          // Septagon has 7 sides
+		ratio            = 0.6        // Ratio for scaling middle points inward
+		radius           = 110.0      // Slightly less than half the width for margin
+		noiseL, noiseH   = 50.0, 80.0 // Noise range
 	)
 	noiseRatio := float64(frameNumber) / float64(totalFrames-1) // 0% at frame 0, 100% at final frame
-	radius := float64(110)                                      // Slightly less than half the width for margin
-	noiseScale := ratio * 0.5                                   // Maximum noise distance is half of the ratio
 
 	// Generate the vertices of the regular septagon
 	vertices := make([][2]float64, sides)
-	for i := 0; i < sides; i++ {
+	for i := range sides {
 		angle := 2 * math.Pi * float64(i) / float64(sides)
-		// Rotate by -math.Pi/2 to start at the top
-		angle -= math.Pi / 2
+		angle -= math.Pi / 2 // half rotation to point up
 		x := float64(centerX) + radius*math.Cos(angle)
 		y := float64(centerY) + radius*math.Sin(angle)
 		vertices[i] = [2]float64{x, y}
@@ -75,7 +74,7 @@ func GenerateNoiseFrame(frameNumber int, totalFrames int) string {
 	<rect width="100%%" height="100%%" fill="#f0f0f0"/>`, width, height)
 
 	// Create star segments with noise for the original star
-	svg += CreateNoisyStarSegments(vertices, centerX, centerY, ratio, "#4a90e2", noiseRatio, noiseScale)
+	svg += CreateNoisyStarSegments(vertices, centerX, centerY, ratio, "#4a90e2", noiseRatio, noiseL, noiseH)
 
 	// Create inverted vertices
 	invertedVertices := make([][2]float64, sides)
@@ -85,7 +84,7 @@ func GenerateNoiseFrame(frameNumber int, totalFrames int) string {
 	}
 
 	// Create star segments with noise for the inverted star
-	svg += CreateNoisyStarSegments(invertedVertices, centerX, centerY, ratio, "#e24a90", noiseRatio, noiseScale)
+	svg += CreateNoisyStarSegments(invertedVertices, centerX, centerY, ratio, "#e24a90", noiseRatio, noiseL, noiseH)
 
 	svg += `
 </svg>`
@@ -94,7 +93,16 @@ func GenerateNoiseFrame(frameNumber int, totalFrames int) string {
 }
 
 // CreateNoisyStarSegments creates SVG paths for star segments with noise applied to each point
-func CreateNoisyStarSegments(vertices [][2]float64, centerX, centerY int, ratio float64, color string, noiseRatio float64, noiseScale float64) string {
+func CreateNoisyStarSegments(
+	vertices [][2]float64,
+	centerX,
+	centerY int,
+	ratio float64,
+	color string,
+	noiseRatio float64,
+	noiseL float64,
+	noiseH float64,
+) string {
 	sides := len(vertices)
 	svg := ""
 
@@ -115,8 +123,8 @@ func CreateNoisyStarSegments(vertices [][2]float64, centerX, centerY int, ratio 
 
 		// First segment: start to mid
 		// Generate noise for the two points in first segment
-		startNoise1 := GenerateNoiseVector(noiseScale)
-		midNoise1 := GenerateNoiseVector(noiseScale)
+		startNoise1 := GenerateNoiseVector(noiseL, noiseH)
+		midNoise1 := GenerateNoiseVector(noiseL, noiseH)
 
 		// Apply noise to each point
 		noisyStart1 := [2]float64{
@@ -139,8 +147,8 @@ func CreateNoisyStarSegments(vertices [][2]float64, centerX, centerY int, ratio 
 
 		// Second segment: mid to end
 		// Generate noise for the two points in second segment
-		midNoise2 := GenerateNoiseVector(noiseScale)
-		endNoise2 := GenerateNoiseVector(noiseScale)
+		midNoise2 := GenerateNoiseVector(noiseL, noiseH)
+		endNoise2 := GenerateNoiseVector(noiseL, noiseH)
 
 		// Apply noise to each point
 		noisyMid2 := [2]float64{
@@ -166,7 +174,12 @@ func CreateNoisyStarSegments(vertices [][2]float64, centerX, centerY int, ratio 
 }
 
 // GenerateNoiseVector generates a random noise vector with a specified scale
-func GenerateNoiseVector(noiseScale float64) [2]float64 {
+func GenerateNoiseVector(
+	noiseLowerBound float64,
+	noiseUpperBound float64,
+) [2]float64 {
+	noiseScale := noiseLowerBound + rand.Float64()*(noiseUpperBound-noiseLowerBound)
+
 	// Random angle between 0 and 2π
 	theta := 2 * math.Pi * rand.Float64()
 	// Noise vector with length noiseScale
