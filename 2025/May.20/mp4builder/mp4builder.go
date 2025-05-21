@@ -1,17 +1,17 @@
-// Package mp4builder provides utilities to create MP4 videos from image sequences
 package mp4builder
 
 import (
+	"bytes"
 	"fmt"
 	"image"
 	"image/png"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
-	"github.com/abema/go-mp4"
 	"github.com/srwiley/oksvg"
 	"github.com/srwiley/rasterx"
 )
@@ -147,16 +147,9 @@ func CreateMP4FromFrames(config Config) error {
 	width := firstImg.Bounds().Dx()
 	height := firstImg.Bounds().Dy()
 
-	// Create output file for the MP4
-	out, err := os.Create(config.OutputVideo)
-	if err != nil {
-		return fmt.Errorf("error creating output file: %w", err)
-	}
-	defer out.Close()
-
-	// Build the MP4 file using go-mp4
+	// Build the MP4 file using FFmpeg
 	startTime := time.Now()
-	err = createMP4WithGoMP4(out, pngFilePaths, width, height, config.FPS)
+	err = createMP4WithFFmpeg(config.OutputVideo, pngFilePaths, width, height, config.FPS)
 	if err != nil {
 		return fmt.Errorf("error creating MP4: %w", err)
 	}
@@ -166,179 +159,64 @@ func CreateMP4FromFrames(config Config) error {
 	return nil
 }
 
-// createMP4WithGoMP4 creates an MP4 file using the go-mp4 library
-func createMP4WithGoMP4(out *os.File, pngFilePaths []string, width, height, fps int) error {
-	// Initialize MP4 writer
-	writer := mp4.NewWriter(out)
-
-	// Create ftyp box (file type box)
-	ftyp := &mp4.Ftyp{
-		MajorBrand:   mp4.BrandMP41(),
-		MinorVersion: 0,
-		CompatibleBrands: []mp4.CompatibleBrandElem{
-			{CompatibleBrand: mp4.BrandISOM()},
-			{CompatibleBrand: mp4.BrandMP41()},
-		},
-	}
-
-	// Write the file type box
-	_, err := mp4.Marshal(writer, ftyp, mp4.Context{})
+// createMP4WithFFmpeg creates an MP4 file using FFmpeg external command
+func createMP4WithFFmpeg(outputPath string, pngFilePaths []string, width, height, fps int) error {
+	// Create a temporary directory to store a frame list file
+	tempDir, err := os.MkdirTemp("", "mp4builder-*")
 	if err != nil {
-		return fmt.Errorf("error writing ftyp: %w", err)
+		return fmt.Errorf("error creating temp directory: %w", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Create a file that lists all the input frames
+	frameListPath := filepath.Join(tempDir, "frames.txt")
+	frameListFile, err := os.Create(frameListPath)
+	if err != nil {
+		return fmt.Errorf("error creating frame list file: %w", err)
 	}
 
-	// Create mdat box for actual media data
-	mdatSize := uint64(8) // mdat box header size
-
-	// Calculate total mdat size
+	// Write frame paths to the list file
 	for _, pngPath := range pngFilePaths {
-		info, err := os.Stat(pngPath)
+		// FFmpeg expects paths with escaped single quotes
+		escapedPath := strings.ReplaceAll(pngPath, "'", "\\'")
+		_, err := frameListFile.WriteString(fmt.Sprintf("file '%s'\n", escapedPath))
 		if err != nil {
-			return fmt.Errorf("error getting file info for %s: %w", pngPath, err)
+			frameListFile.Close()
+			return fmt.Errorf("error writing to frame list: %w", err)
 		}
-		mdatSize += uint64(info.Size())
+	}
+	frameListFile.Close()
+
+	// Build FFmpeg command to create video from the frames
+	cmdArgs := []string{
+		"-y",           // Overwrite output files without asking
+		"-f", "concat", // Use the concat demuxer
+		"-safe", "0", // Don't require safe filenames
+		"-i", frameListPath, // Input file list
+		"-framerate", fmt.Sprintf("%d", fps), // Set input framerate
+		"-c:v", "libx264", // Video codec
+		"-profile:v", "high", // High profile for better quality
+		"-crf", "18", // Quality level (lower is better, 18 is very good quality)
+		"-pix_fmt", "yuv420p", // Pixel format for compatibility
+		"-movflags", "+faststart", // Optimize for web streaming
+		outputPath, // Output file
 	}
 
-	// Write mdat box header
-	err = writer.WriteBoxStart(&mp4.BoxInfo{
-		Type: mp4.BoxTypeMdat(),
-		Size: mdatSize,
-	})
+	// Run FFmpeg command
+	cmd := exec.Command("ffmpeg", cmdArgs...)
+
+	// Capture stdout and stderr
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	// Execute the command
+	fmt.Println("Running FFmpeg to create MP4...")
+	err = cmd.Run()
 	if err != nil {
-		return fmt.Errorf("error writing mdat header: %w", err)
+		return fmt.Errorf("FFmpeg error: %w\nStderr: %s", err, stderr.String())
 	}
 
-	// Write PNG data to mdat
-	for i, pngPath := range pngFilePaths {
-		pngData, err := os.ReadFile(pngPath)
-		if err != nil {
-			return fmt.Errorf("error reading PNG file %s: %w", pngPath, err)
-		}
-
-		_, err = writer.Write(pngData)
-		if err != nil {
-			return fmt.Errorf("error writing frame data: %w", err)
-		}
-
-		fmt.Printf("Added frame %d/%d to video\n", i+1, len(pngFilePaths))
-	}
-
-	// Finish writing mdat
-	err = writer.WriteBoxEnd()
-	if err != nil {
-		return fmt.Errorf("error finalizing mdat: %w", err)
-	}
-
-	// Write moov box (container for metadata)
-	moov := &mp4.Moov{
-		Mvhd: &mp4.Mvhd{
-			Timescale:   uint32(fps),
-			Duration:    uint64(len(pngFilePaths)),
-			Rate:        0x00010000, // 1.0 fixed-point
-			Volume:      0x0100,     // 1.0 fixed-point
-			Matrix:      [9]int32{0x00010000, 0, 0, 0, 0x00010000, 0, 0, 0, 0x40000000},
-			NextTrackID: 2,
-		},
-		Traks: []*mp4.Trak{
-			{
-				Tkhd: &mp4.Tkhd{
-					Flags:    mp4.TkhdFlagTrackEnabled | mp4.TkhdFlagTrackInMovie,
-					Duration: uint64(len(pngFilePaths)),
-					Width:    uint32(width) << 16,  // 16.16 fixed-point
-					Height:   uint32(height) << 16, // 16.16 fixed-point
-					Matrix:   [9]int32{0x00010000, 0, 0, 0, 0x00010000, 0, 0, 0, 0x40000000},
-					TrackID:  1,
-				},
-				Mdia: &mp4.Mdia{
-					Mdhd: &mp4.Mdhd{
-						Timescale: uint32(fps),
-						Duration:  uint64(len(pngFilePaths)),
-						Language:  [3]byte{'u', 'n', 'd'},
-					},
-					Hdlr: &mp4.Hdlr{
-						HandlerType: [4]byte{'v', 'i', 'd', 'e'},
-						Name:        "VideoHandler",
-					},
-					Minf: &mp4.Minf{
-						Vmhd: &mp4.Vmhd{
-							Flags: 1,
-						},
-						Dinf: &mp4.Dinf{
-							Dref: &mp4.Dref{
-								Url: []*mp4.Url{
-									{
-										Flags: mp4.UrlSelfContained,
-									},
-								},
-							},
-						},
-						Stbl: &mp4.Stbl{
-							Stsd: &mp4.Stsd{
-								Entries: []mp4.SampleEntry{
-									&mp4.VisualSampleEntry{
-										SampleEntry: mp4.SampleEntry{
-											DataReferenceIndex: 1,
-										},
-										Width:  uint16(width),
-										Height: uint16(height),
-										Depth:  24,
-										// In a real implementation, you would set up a proper codec here
-									},
-								},
-							},
-							Stts: &mp4.Stts{
-								Entries: []mp4.SttsEntry{
-									{
-										SampleCount: uint32(len(pngFilePaths)),
-										SampleDelta: 1,
-									},
-								},
-							},
-							Stsc: &mp4.Stsc{
-								Entries: []mp4.StscEntry{
-									{
-										FirstChunk:      1,
-										SamplesPerChunk: 1,
-										SampleDescIndex: 1,
-									},
-								},
-							},
-							Stsz: &mp4.Stsz{
-								SampleSize:  0,
-								SampleCount: uint32(len(pngFilePaths)),
-								EntrySize:   make([]uint32, len(pngFilePaths)),
-							},
-							Stco: &mp4.Stco{
-								ChunkOffsets: make([]uint32, len(pngFilePaths)),
-							},
-						},
-					},
-				},
-			},
-		},
-	}
-
-	// Set sample sizes in stsz box
-	for i, pngPath := range pngFilePaths {
-		info, err := os.Stat(pngPath)
-		if err != nil {
-			return fmt.Errorf("error getting file info for %s: %w", pngPath, err)
-		}
-		moov.Traks[0].Mdia.Minf.Stbl.Stsz.EntrySize[i] = uint32(info.Size())
-	}
-
-	// Set a simple offset for chunks in stco
-	offset := uint32(8 + 8) // ftyp box header + mdat box header
-	for i := range pngFilePaths {
-		moov.Traks[0].Mdia.Minf.Stbl.Stco.ChunkOffsets[i] = offset
-		offset += moov.Traks[0].Mdia.Minf.Stbl.Stsz.EntrySize[i]
-	}
-
-	// Write moov box
-	_, err = mp4.Marshal(writer, moov, mp4.Context{})
-	if err != nil {
-		return fmt.Errorf("error writing moov: %w", err)
-	}
-
+	fmt.Println("MP4 video created successfully!")
 	return nil
 }

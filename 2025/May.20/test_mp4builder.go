@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 )
 
-func main() {
+func test() {
 	framesDir := filepath.Join("_output", "frames")
 	outputDir := "_output"
 
