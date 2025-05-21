@@ -105,7 +105,7 @@ func CreateNoisyStarSegments(
 	svg := ""
 
 	// Process each edge of the septagon
-	for i := 0; i < sides; i++ {
+	for i := range sides {
 		cleanStart := vertices[i]
 		cleanEnd := vertices[(i+1)%sides] // Wrap around to the first vertex at the end
 

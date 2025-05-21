@@ -116,7 +116,30 @@ func CreateMP4FromFrames(config Config) error {
 	fmt.Printf("Found %d SVG files. Converting to PNG...\n", len(svgFiles))
 
 	// Convert SVGs to PNGs
+	// First create a map to extract frame number from SVG filenames
+	frameMap := make(map[string]int)
+	frameOrder := make([]string, len(svgFiles))
+
+	// Extract frame numbers from filenames (assuming they follow frame_XX.svg pattern)
 	for i, svgFile := range svgFiles {
+		frameOrder[i] = svgFile
+		// Try to parse the frame number from the filename
+		var frameNum int
+		if n, err := fmt.Sscanf(svgFile, "frame_%d.svg", &frameNum); n == 1 && err == nil {
+			frameMap[svgFile] = frameNum
+		} else {
+			// If we can't parse a number, use the index as a fallback
+			frameMap[svgFile] = i
+		}
+	}
+
+	// Sort SVG files by their numeric frame number
+	sort.Slice(frameOrder, func(i, j int) bool {
+		return frameMap[frameOrder[i]] < frameMap[frameOrder[j]]
+	})
+
+	// Convert SVGs to PNGs with sequential numbering
+	for i, svgFile := range frameOrder {
 		svgPath := filepath.Join(config.FramesFolder, svgFile)
 		// Create PNG filename with padding for proper sorting
 		pngFile := fmt.Sprintf("frame_%04d.png", i)
@@ -166,7 +189,8 @@ func CreateMP4FromFrames(config Config) error {
 
 	// Build the MP4 file using FFmpeg
 	startTime := time.Now()
-	err = createMP4WithFFmpeg(config.OutputVideo, pngFilePaths, width, height, config.FPS)
+	// Use a direct pattern approach instead of individual files
+	err = createMP4WithDirectPattern(config.OutputVideo, config.TempFolder, width, height, config.FPS)
 	if err != nil {
 		return fmt.Errorf("error creating MP4: %w", err)
 	}
@@ -178,64 +202,89 @@ func CreateMP4FromFrames(config Config) error {
 	fmt.Println("Cleaning up temporary files...")
 
 	// First remove all PNG files
-	// for _, pngPath := range pngFilePaths {
-	// 	if err := os.Remove(pngPath); err != nil {
-	// 		fmt.Printf("Warning: could not remove temporary file %s: %v\n", pngPath, err)
-	// 	}
-	// }
+	for _, pngPath := range pngFilePaths {
+		if err := os.Remove(pngPath); err != nil {
+			fmt.Printf("Warning: could not remove temporary file %s: %v\n", pngPath, err)
+		}
+	}
 
 	// Then remove the temp folder
-	// if err := os.RemoveAll(config.TempFolder); err != nil {
-	// 	fmt.Printf("Warning: could not remove temp directory %s: %v\n", config.TempFolder, err)
-	// } else {
-	// 	fmt.Println("Temporary files cleaned up successfully.")
-	// }
+	if err := os.RemoveAll(config.TempFolder); err != nil {
+		fmt.Printf("Warning: could not remove temp directory %s: %v\n", config.TempFolder, err)
+	} else {
+		fmt.Println("Temporary files cleaned up successfully.")
+	}
 
 	return nil
 }
 
-// createMP4WithFFmpeg creates an MP4 file using FFmpeg external command
-func createMP4WithFFmpeg(outputPath string, pngFilePaths []string, width, height, fps int) error {
-	// Create a temporary directory to store a frame list file
+// createMP4WithDirectPattern creates an MP4 file using FFmpeg with a pattern-based approach
+func createMP4WithDirectPattern(outputPath string, pngDir string, width, height, fps int) error {
+	// Instead of using glob pattern, get all PNG files and sort them properly
+	entries, err := os.ReadDir(pngDir)
+	if err != nil {
+		return fmt.Errorf("error reading PNG directory: %w", err)
+	}
+
+	// Filter PNG files
+	var pngFiles []string
+	for _, entry := range entries {
+		if !entry.IsDir() && strings.HasSuffix(strings.ToLower(entry.Name()), ".png") {
+			pngFiles = append(pngFiles, entry.Name())
+		}
+	}
+
+	if len(pngFiles) == 0 {
+		return fmt.Errorf("no PNG files found in directory")
+	}
+
+	// Custom numeric sort for frame_XXXX.png files
+	sort.Slice(pngFiles, func(i, j int) bool {
+		var numI, numJ int
+		fmt.Sscanf(pngFiles[i], "frame_%d.png", &numI)
+		fmt.Sscanf(pngFiles[j], "frame_%d.png", &numJ)
+		return numI < numJ
+	})
+
+	// Create a temporary file list for FFmpeg
 	tempDir, err := os.MkdirTemp("", "mp4builder-*")
 	if err != nil {
 		return fmt.Errorf("error creating temp directory: %w", err)
 	}
 	defer os.RemoveAll(tempDir)
 
-	// Create a file that lists all the input frames
-	frameListPath := filepath.Join(tempDir, "frames.txt")
-	frameListFile, err := os.Create(frameListPath)
+	// Create file list
+	listFile := filepath.Join(tempDir, "files.txt")
+	file, err := os.Create(listFile)
 	if err != nil {
-		return fmt.Errorf("error creating frame list file: %w", err)
+		return fmt.Errorf("error creating file list: %w", err)
 	}
 
-	// Write frame paths to the list file
-	for _, pngPath := range pngFilePaths {
-		// For FFmpeg concat protocol, paths should be relative or absolute but usable by FFmpeg
-		// We'll use absolute paths for clarity
+	// Write all PNG files in order to the list
+	for _, pngFile := range pngFiles {
+		pngPath := filepath.Join(pngDir, pngFile)
 		absPath, err := filepath.Abs(pngPath)
 		if err != nil {
-			frameListFile.Close()
+			file.Close()
 			return fmt.Errorf("error getting absolute path: %w", err)
 		}
-		// FFmpeg expects paths with escaped single quotes
-		escapedPath := strings.ReplaceAll(absPath, "'", "\\'")
-		_, err = frameListFile.WriteString(fmt.Sprintf("file '%s'\n", escapedPath))
+
+		// Format each entry according to FFmpeg concat demuxer requirements
+		_, err = file.WriteString(fmt.Sprintf("file '%s'\nduration %f\n", absPath, 1.0/float64(fps)))
 		if err != nil {
-			frameListFile.Close()
-			return fmt.Errorf("error writing to frame list: %w", err)
+			file.Close()
+			return fmt.Errorf("error writing to file list: %w", err)
 		}
 	}
-	frameListFile.Close()
+	file.Close()
 
-	// Build FFmpeg command to create video from the frames
+	// Use FFmpeg with the file list approach for exact order control
 	cmdArgs := []string{
 		"-y",           // Overwrite output files without asking
-		"-f", "concat", // Use the concat demuxer
-		"-safe", "0", // Don't require safe filenames
-		"-i", frameListPath, // Input file list
-		"-framerate", fmt.Sprintf("%d", fps), // Set input framerate
+		"-f", "concat", // Use concat demuxer
+		"-safe", "0", // Allow absolute paths
+		"-i", listFile, // Input from file list
+		"-framerate", fmt.Sprintf("%d", fps), // Output framerate
 		"-c:v", "libx264", // Video codec
 		"-profile:v", "high", // High profile for better quality
 		"-crf", "18", // Quality level (lower is better, 18 is very good quality)
@@ -253,10 +302,10 @@ func createMP4WithFFmpeg(outputPath string, pngFilePaths []string, width, height
 	cmd.Stderr = &stderr
 
 	// Execute the command
-	fmt.Println("Running FFmpeg to create MP4...")
-	err = cmd.Run()
-	if err != nil {
-		return fmt.Errorf("FFmpeg error: %w\nStderr: %s", err, stderr.String())
+	fmt.Println("Running FFmpeg to create MP4 with direct pattern matching...")
+	cmdErr := cmd.Run()
+	if cmdErr != nil {
+		return fmt.Errorf("FFmpeg error: %w\nStderr: %s", cmdErr, stderr.String())
 	}
 
 	fmt.Println("MP4 video created successfully!")
