@@ -178,18 +178,18 @@ func CreateMP4FromFrames(config Config) error {
 	fmt.Println("Cleaning up temporary files...")
 
 	// First remove all PNG files
-	for _, pngPath := range pngFilePaths {
-		if err := os.Remove(pngPath); err != nil {
-			fmt.Printf("Warning: could not remove temporary file %s: %v\n", pngPath, err)
-		}
-	}
+	// for _, pngPath := range pngFilePaths {
+	// 	if err := os.Remove(pngPath); err != nil {
+	// 		fmt.Printf("Warning: could not remove temporary file %s: %v\n", pngPath, err)
+	// 	}
+	// }
 
 	// Then remove the temp folder
-	if err := os.RemoveAll(config.TempFolder); err != nil {
-		fmt.Printf("Warning: could not remove temp directory %s: %v\n", config.TempFolder, err)
-	} else {
-		fmt.Println("Temporary files cleaned up successfully.")
-	}
+	// if err := os.RemoveAll(config.TempFolder); err != nil {
+	// 	fmt.Printf("Warning: could not remove temp directory %s: %v\n", config.TempFolder, err)
+	// } else {
+	// 	fmt.Println("Temporary files cleaned up successfully.")
+	// }
 
 	return nil
 }

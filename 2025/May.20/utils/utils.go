@@ -48,14 +48,14 @@ func CreateStarPath(vertices [][2]float64, centerX, centerY int, ratio float64) 
 }
 
 // GenerateNoiseFrame generates a frame for the animation with specified noise level
-func GenerateNoiseFrame(frameNumber int, totalFrames int) string {
+func GenerateNoiseFrame(frameNumber int, totalFrames int, noiseVectors [][2]float64) string {
 	const (
 		width, height    = 256, 256
 		centerX, centerY = 128, 128
-		sides            = 7          // Septagon has 7 sides
-		ratio            = 0.6        // Ratio for scaling middle points inward
-		radius           = 110.0      // Slightly less than half the width for margin
-		noiseL, noiseH   = 50.0, 80.0 // Noise range
+		sides            = 7        // Septagon has 7 sides
+		ratio            = 0.6      // Ratio for scaling middle points inward
+		radius           = 110.0    // Slightly less than half the width for margin
+		noiseL, noiseH   = 0.2, 0.7 // Noise range
 	)
 	noiseRatio := float64(frameNumber) / float64(totalFrames-1) // 0% at frame 0, 100% at final frame
 
@@ -73,8 +73,7 @@ func GenerateNoiseFrame(frameNumber int, totalFrames int) string {
 	svg := fmt.Sprintf(`<svg width="%d" height="%d" xmlns="http://www.w3.org/2000/svg">
 	<rect width="100%%" height="100%%" fill="#f0f0f0"/>`, width, height)
 
-	// Create star segments with noise for the original star
-	svg += CreateNoisyStarSegments(vertices, centerX, centerY, ratio, "#4a90e2", noiseRatio, noiseL, noiseH)
+	svg += CreateNoisyStarSegments(vertices, centerX, centerY, ratio, "#4a90e2", noiseRatio, noiseVectors[:4*sides])
 
 	// Create inverted vertices
 	invertedVertices := make([][2]float64, sides)
@@ -84,7 +83,7 @@ func GenerateNoiseFrame(frameNumber int, totalFrames int) string {
 	}
 
 	// Create star segments with noise for the inverted star
-	svg += CreateNoisyStarSegments(invertedVertices, centerX, centerY, ratio, "#e24a90", noiseRatio, noiseL, noiseH)
+	svg += CreateNoisyStarSegments(invertedVertices, centerX, centerY, ratio, "#e24a90", noiseRatio, noiseVectors[4*sides:])
 
 	svg += `
 </svg>`
@@ -100,8 +99,7 @@ func CreateNoisyStarSegments(
 	ratio float64,
 	color string,
 	noiseRatio float64,
-	noiseL float64,
-	noiseH float64,
+	noiseVectors [][2]float64,
 ) string {
 	sides := len(vertices)
 	svg := ""
@@ -123,8 +121,9 @@ func CreateNoisyStarSegments(
 
 		// First segment: start to mid
 		// Generate noise for the two points in first segment
-		startNoise1 := GenerateNoiseVector(noiseL, noiseH)
-		midNoise1 := GenerateNoiseVector(noiseL, noiseH)
+		vector_index := 4 * i
+		startNoise1 := noiseVectors[vector_index]
+		midNoise1 := noiseVectors[1+vector_index]
 
 		// Apply noise to each point
 		noisyStart1 := [2]float64{
@@ -147,8 +146,8 @@ func CreateNoisyStarSegments(
 
 		// Second segment: mid to end
 		// Generate noise for the two points in second segment
-		midNoise2 := GenerateNoiseVector(noiseL, noiseH)
-		endNoise2 := GenerateNoiseVector(noiseL, noiseH)
+		midNoise2 := noiseVectors[2+vector_index]
+		endNoise2 := noiseVectors[3+vector_index]
 
 		// Apply noise to each point
 		noisyMid2 := [2]float64{

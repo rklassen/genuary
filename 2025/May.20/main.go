@@ -44,7 +44,7 @@ func main() {
 
 	// Generate animation frames, scope for folding porpoises 🐬 only
 	{
-		totalFrames := 32
+		totalFrames := 120
 		fmt.Println("Generating animation frames...")
 
 		// Create frames directory
@@ -53,8 +53,18 @@ func main() {
 			log.Fatalf("Failed to create frames directory: %v", err)
 		}
 
+		// Generate noise vectors for animation (4 vectors per segment * 7 segments * 2 septagons = 56 vectors)
+		sides := 7                       // Septagon has 7 sides
+		requiredVectors := 4 * sides * 2 // 4 noise vectors per segment, 2 septagons (original + inverted)
+		noiseVectors := make([][2]float64, requiredVectors)
+
+		// Generate random noise vectors with lengths between 0.1 and 1.0
+		for i := range noiseVectors {
+			noiseVectors[i] = utils.GenerateNoiseVector(0.1, 1.0)
+		}
+
 		for i := 0; i < totalFrames; i++ {
-			frameContent := utils.GenerateNoiseFrame(i, totalFrames)
+			frameContent := utils.GenerateNoiseFrame(i, totalFrames, noiseVectors)
 			framePath := filepath.Join(framesDir, fmt.Sprintf("frame_%02d.svg", i))
 			if e := os.WriteFile(framePath, []byte(frameContent), 0644); e != nil {
 				log.Fatalf("Failed to write frame file: %v", e)
@@ -68,7 +78,7 @@ func main() {
 		videoConfig := mp4builder.Config{
 			FramesFolder: framesDir,
 			OutputFolder: outputDir,
-			TempFolder:   filepath.Join(outputDir, "temp"),
+			TempFolder:   filepath.Join(outputDir, "png"),
 			OutputVideo:  filepath.Join(outputDir, "lawful-chaotic.mp4"),
 			FPS:          16,
 		}
