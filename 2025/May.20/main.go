@@ -16,7 +16,7 @@ func main() {
 		log.Fatalf("Failed to create output directory: %v", err)
 	}
 
-	// Generate and save equilateral septagon
+	// septagon svg
 	svgContent := gensvg.Septagon()
 	outputPath := filepath.Join(outputDir, "septagon.svg")
 	if err := os.WriteFile(outputPath, []byte(svgContent), 0644); err != nil {
@@ -24,45 +24,40 @@ func main() {
 	}
 	fmt.Printf("SVG with equilateral septagon saved to %s\n", outputPath)
 
-	// Generate star SVG content
+	// star svg
 	starSVGContent := gensvg.Star()
-
-	// Save star SVG to file
 	starOutputPath := filepath.Join(outputDir, "star.svg")
-	if err := os.WriteFile(starOutputPath, []byte(starSVGContent), 0644); err != nil {
-		log.Fatalf("Failed to write star SVG file: %v", err)
+	if e := os.WriteFile(starOutputPath, []byte(starSVGContent), 0644); e != nil {
+		log.Fatalf("Failed to write star SVG file: %v", e)
 	}
 	fmt.Printf("SVG with star pattern saved to %s\n", starOutputPath)
 
-	// Generate and save complex star
-	complexSVGContent := gensvg.ComplexStar()
+	// complex star
 	complexOutputPath := filepath.Join(outputDir, "complex.svg")
-	if err := os.WriteFile(complexOutputPath, []byte(complexSVGContent), 0644); err != nil {
-		log.Fatalf("Failed to write complex SVG file: %v", err)
+	if e := os.WriteFile(complexOutputPath,
+		[]byte(gensvg.ComplexStar()),
+		0644); e != nil {
+		log.Fatalf("Failed to write complex SVG file: %v", e)
 	}
 	fmt.Printf("SVG with complex pattern saved to %s\n", complexOutputPath)
 
-	// Generate animation frames
+	// Generate animation frames, scope for folding porpoises 🐬 only
 	{
-		// scope braces for folding porpoises 🐬
-		totalFrames := 16
+		totalFrames := 32
 		fmt.Println("Generating animation frames...")
+
 		// Create frames directory
 		framesDir := filepath.Join(outputDir, "frames")
 		if err := os.MkdirAll(framesDir, 0755); err != nil {
 			log.Fatalf("Failed to create frames directory: %v", err)
 		}
 
-		for i := 0; i < totalFrames; i++ {
-			// Generate frame with noise level based on frame number
+		for i := range totalFrames {
 			frameContent := utils.GenerateNoiseFrame(i, totalFrames)
-
-			// Save frame to file
 			framePath := filepath.Join(framesDir, fmt.Sprintf("frame_%02d.svg", i))
-			if err := os.WriteFile(framePath, []byte(frameContent), 0644); err != nil {
-				log.Fatalf("Failed to write frame file: %v", err)
+			if e := os.WriteFile(framePath, []byte(frameContent), 0644); e != nil {
+				log.Fatalf("Failed to write frame file: %v", e)
 			}
-
 			fmt.Printf("Frame %d/%d saved to %s\n", i+1, totalFrames, framePath)
 		}
 		fmt.Println(utils.TimeInfo())
