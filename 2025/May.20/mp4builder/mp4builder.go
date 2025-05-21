@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"image"
+	"image/color"
 	"image/png"
 	"os"
 	"os/exec"
@@ -34,6 +35,14 @@ func ConvertSvgToPng(svgPath, pngPath string) error {
 
 	// Create a new RGBA image
 	img := image.NewRGBA(image.Rect(0, 0, w, h))
+
+	// Fill the background with #556 color
+	bg := color.RGBA{0x55, 0x55, 0x66, 0xff} // #556 with full opacity
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			img.Set(x, y, bg)
+		}
+	}
 
 	// Create the rasterizer
 	scanner := rasterx.NewScannerGV(w, h, img, img.Bounds())
@@ -164,6 +173,24 @@ func CreateMP4FromFrames(config Config) error {
 
 	elapsedTime := time.Since(startTime)
 	fmt.Printf("Video created successfully: %s (processing time: %v)\n", config.OutputVideo, elapsedTime)
+
+	// Clean up temporary PNG files and temp folder
+	fmt.Println("Cleaning up temporary files...")
+
+	// First remove all PNG files
+	for _, pngPath := range pngFilePaths {
+		if err := os.Remove(pngPath); err != nil {
+			fmt.Printf("Warning: could not remove temporary file %s: %v\n", pngPath, err)
+		}
+	}
+
+	// Then remove the temp folder
+	if err := os.RemoveAll(config.TempFolder); err != nil {
+		fmt.Printf("Warning: could not remove temp directory %s: %v\n", config.TempFolder, err)
+	} else {
+		fmt.Println("Temporary files cleaned up successfully.")
+	}
+
 	return nil
 }
 
