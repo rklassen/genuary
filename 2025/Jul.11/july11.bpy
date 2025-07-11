@@ -1,0 +1,202 @@
+import bpy
+import math
+import mathutils
+
+# === Clean slate ===
+bpy.ops.object.select_all(action='SELECT')
+bpy.ops.object.delete(use_global=False)
+
+# === Curve parameters ===
+num_points = 100
+t_min, t_max = 0.0, 16.0
+radius_scale = 1.0
+A, B, N, phi = 1.0, 0.3, 20, math.pi / 4
+
+def curve_point(t):
+    theta = 2 * math.pi * (t / (t_max - t_min))
+    r = A * math.sin(3 * theta + phi) + B * math.sin(N * theta)
+    x = r * math.cos(theta) * radius_scale
+    y = r * math.sin(theta) * radius_scale
+    z = t
+    return mathutils.Vector((x, y, z))
+
+# === Create curve mesh ===
+mesh = bpy.data.meshes.new("CurveMesh")
+obj = bpy.data.objects.new("CurveObj", mesh)
+bpy.context.collection.objects.link(obj)
+
+verts, edges = [], []
+for i in range(num_points):
+    t = t_min + (t_max - t_min) * i / (num_points - 1)
+    pt = curve_point(t)
+    verts.append(pt)
+    if i > 0:
+        edges.append((i - 1, i))
+mesh.from_pydata(verts, edges, [])
+mesh.update()
+
+# === Geometry Nodes setup ===
+mod = obj.modifiers.new("GeoNodes", 'NODES')
+gn_tree = bpy.data.node_groups.new("IcosphereScatter", 'GeometryNodeTree')
+mod.node_group = gn_tree
+
+# Define sockets
+gn_tree.interface.new_socket(name="Geometry", in_out='INPUT', socket_type='NodeSocketGeometry')
+gn_tree.interface.new_socket(name="Geometry", in_out='OUTPUT', socket_type='NodeSocketGeometry')
+
+# Create input/output nodes
+input_node = gn_tree.nodes.new("NodeGroupInput")
+input_node.location = (-800, 0)
+output_node = gn_tree.nodes.new("NodeGroupOutput")
+output_node.location = (1200, 0)
+
+# Simplified geometry nodes - just instancing
+
+# Create icosphere
+ico = gn_tree.nodes.new("GeometryNodeMeshIcoSphere")
+ico.inputs['Radius'].default_value = 0.08
+ico.inputs['Subdivisions'].default_value = 1
+ico.location = (400, -100)
+
+# Instance on points
+instance = gn_tree.nodes.new("GeometryNodeInstanceOnPoints")
+instance.location = (800, 0)
+
+# Realize instances
+realize = gn_tree.nodes.new("GeometryNodeRealizeInstances")
+realize.location = (1000, 0)
+
+# === Link nodes ===
+# Simplified geometry flow - no color calculation in geometry nodes
+gn_tree.links.new(input_node.outputs["Geometry"], instance.inputs["Points"])
+gn_tree.links.new(ico.outputs["Mesh"], instance.inputs["Instance"])
+gn_tree.links.new(instance.outputs["Instances"], realize.inputs["Geometry"])
+gn_tree.links.new(realize.outputs["Geometry"], output_node.inputs["Geometry"])
+
+# === Create emissive material with HSL computation ===
+mat = bpy.data.materials.new("EmissiveCurveMaterial")
+mat.use_nodes = True
+nodes = mat.node_tree.nodes
+links = mat.node_tree.links
+nodes.clear()
+
+# Get object position
+obj_info = nodes.new("ShaderNodeObjectInfo")
+obj_info.location = (-800, 0)
+
+# Separate XYZ from position
+sep_xyz = nodes.new("ShaderNodeSeparateXYZ")
+sep_xyz.location = (-600, 0)
+
+# Calculate angle (hue) using ARCTAN2
+theta = nodes.new("ShaderNodeMath")
+theta.operation = 'ARCTAN2'
+theta.location = (-400, 200)
+
+# Normalize theta to 0-1 for hue
+theta_norm = nodes.new("ShaderNodeMapRange")
+theta_norm.inputs['From Min'].default_value = -math.pi
+theta_norm.inputs['From Max'].default_value = math.pi
+theta_norm.inputs['To Min'].default_value = 0.0
+theta_norm.inputs['To Max'].default_value = 1.0
+theta_norm.clamp = True
+theta_norm.location = (-200, 200)
+
+# Calculate radius for lightness
+radius_combine = nodes.new("ShaderNodeCombineXYZ")
+radius_combine.location = (-400, 0)
+radius_length = nodes.new("ShaderNodeVectorMath")
+radius_length.operation = 'LENGTH'
+radius_length.location = (-200, 0)
+
+# Normalize radius to lightness (0.3 to 0.9)
+radius_norm = nodes.new("ShaderNodeMapRange")
+radius_norm.inputs['From Min'].default_value = 0.0
+radius_norm.inputs['From Max'].default_value = 2.0
+radius_norm.inputs['To Min'].default_value = 0.3
+radius_norm.inputs['To Max'].default_value = 0.9
+radius_norm.clamp = True
+radius_norm.location = (0, 0)
+
+# Normalize Z (height) for saturation (0.7 to 1.0)
+z_norm = nodes.new("ShaderNodeMapRange")
+z_norm.inputs['From Min'].default_value = t_min
+z_norm.inputs['From Max'].default_value = t_max
+z_norm.inputs['To Min'].default_value = 0.7
+z_norm.inputs['To Max'].default_value = 1.0
+z_norm.clamp = True
+z_norm.location = (-200, -200)
+
+# Create HSV color using shader node
+combine_hsv = nodes.new("ShaderNodeCombineHSV")
+combine_hsv.location = (200, 0)
+
+# Emission shader for glow effect
+emission = nodes.new("ShaderNodeEmission")
+emission.location = (400, 0)
+emission.inputs["Strength"].default_value = 2.0  # Make it pop!
+
+# Output
+output = nodes.new("ShaderNodeOutputMaterial")
+output.location = (600, 0)
+
+# Link the shader network
+links.new(obj_info.outputs["Location"], sep_xyz.inputs["Vector"])
+
+# Hue calculation (angle)
+links.new(sep_xyz.outputs["Y"], theta.inputs[0])  # Y for first input
+links.new(sep_xyz.outputs["X"], theta.inputs[1])  # X for second input
+links.new(theta.outputs["Value"], theta_norm.inputs["Value"])
+
+# Lightness calculation (radius)
+links.new(sep_xyz.outputs["X"], radius_combine.inputs["X"])
+links.new(sep_xyz.outputs["Y"], radius_combine.inputs["Y"])
+links.new(radius_combine.outputs["Vector"], radius_length.inputs[0])
+links.new(radius_length.outputs["Value"], radius_norm.inputs["Value"])
+
+# Saturation calculation (height)
+links.new(sep_xyz.outputs["Z"], z_norm.inputs["Value"])
+
+# Combine HSV using shader node inputs
+links.new(theta_norm.outputs["Result"], combine_hsv.inputs["H"])    # Hue
+links.new(z_norm.outputs["Result"], combine_hsv.inputs["S"])       # Saturation
+links.new(radius_norm.outputs["Result"], combine_hsv.inputs["V"])  # Value
+
+# Final emission
+links.new(combine_hsv.outputs["Color"], emission.inputs["Color"])
+links.new(emission.outputs["Emission"], output.inputs["Surface"])
+
+# Assign material
+obj.data.materials.append(mat)
+
+# === Set up dark blue-purple world background ===
+world = bpy.context.scene.world
+if world is None:
+    world = bpy.data.worlds.new("World")
+    bpy.context.scene.world = world
+
+world.use_nodes = True
+world_nodes = world.node_tree.nodes
+world_links = world.node_tree.links
+world_nodes.clear()
+
+# Create world shader nodes
+world_bg = world_nodes.new("ShaderNodeBackground")
+world_bg.location = (0, 0)
+world_bg.inputs["Color"].default_value = (0.05, 0.08, 0.2, 1.0)  # Dark blue-purple
+world_bg.inputs["Strength"].default_value = 0.8
+
+world_output = world_nodes.new("ShaderNodeOutputWorld")
+world_output.location = (200, 0)
+
+world_links.new(world_bg.outputs["Background"], world_output.inputs["Surface"])
+
+# === Set viewport shading to Material Preview or Rendered ===
+for area in bpy.context.screen.areas:
+    if area.type == 'VIEW_3D':
+        for space in area.spaces:
+            if space.type == 'VIEW_3D':
+                space.shading.type = 'RENDERED'  # Use rendered view to see emission
+                break
+
+print("Emissive curve created successfully with HSL computed in shader!")
