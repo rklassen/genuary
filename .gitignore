@@ -1,6 +1,8 @@
 # ignore all folders called `frames`
 *frames/ 
 2025/Jan.31/frames
+# ignore heads_png folder with attention visualizations
+2025/Jul.12/heads_png/
 **/.DS_Store
 *.blend1
 *.frames

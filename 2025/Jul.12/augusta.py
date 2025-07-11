@@ -24,11 +24,45 @@ with torch.no_grad():
     outputs = model(**inputs)
     attentions = outputs.attentions
 
+# Print information about all heads
+print(f"Model has {len(attentions)} layers")
+print(f"Each layer has {attentions[0].shape[1]} attention heads")
+print(f"Attention matrix shape per head: {attentions[0].shape[2:]}") 
+
+print("\n" + "="*80)
+print("ALL ATTENTION HEADS SUMMARY")
+print("="*80)
+
+# Analyze all heads
+for layer_idx in range(len(attentions)):
+    layer_attention = attentions[layer_idx][0]  # Get first (and only) batch
+    num_heads = layer_attention.shape[0]
+    
+    print(f"\nLayer {layer_idx + 1}:")
+    print("-" * 60)
+    
+    for head_idx in range(num_heads):
+        head_attention = layer_attention[head_idx].numpy()
+        
+        # Calculate some statistics for this head
+        max_attention = np.max(head_attention)
+        mean_attention = np.mean(head_attention)
+        std_attention = np.std(head_attention)
+        
+        # Find the strongest attention connection
+        max_i, max_j = np.unravel_index(np.argmax(head_attention), head_attention.shape)
+        
+        print(f"  Head {head_idx + 1:2d}: max={max_attention:.4f}, mean={mean_attention:.4f}, std={std_attention:.4f}")
+        print(f"           strongest: '{tokens[max_i]}' → '{tokens[max_j]}' ({max_attention:.4f})")
+
+print("\n" + "="*80)
+
 # Extract attention for layer 6, head 1 (0-indexed, so layer 5, head 0)
 layer_idx = 5  # Layer 6 (0-indexed)
 head_idx = 0   # Head 1 (0-indexed)
 
 attention_matrix = attentions[layer_idx][0, head_idx].numpy()
+print(f"\nFocusing on Layer {layer_idx + 1}, Head {head_idx + 1} for visualization:")
 print(f"Attention matrix shape: {attention_matrix.shape}")
 
 # Remove SEP token (last token) from visualization
