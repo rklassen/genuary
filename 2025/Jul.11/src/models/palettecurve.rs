@@ -8,15 +8,16 @@ use indicatif::{ProgressBar, ProgressStyle};
 use std::sync::{Arc, Mutex};
 use rand::Rng;
 
-const SEARCH_DEPTH: usize = 2000; // Number of random samples for curve fitting
+const SEARCH_DEPTH: usize = 2048; // Number of random curves to generate for curve fitting
 
 pub struct PaletteCurve {
     pub num_points: usize,
     pub amplitude: f32, // Combines amplitude and radius_scale into a single scaling factor
-    pub oscilation: f32, // amplitude of an inner oscillation or secondary circle in the curve's shape.
-    pub harmonic: usize,
+    pub amplitude_phase: f32, // phase shift for amplitude term
+    pub oscilation: f32, // Amplitude of an inner oscillation or secondary circle in the curve's shape.
+    pub oscilation_phase: f32, // phase shift for oscilation term
+    pub harmonic: f32, // number of cycles per t from 0 to 1
     pub z_range: (f32, f32), // z range for the curve
-    pub phi: f32, // phase shift
 }
 
 impl Clone for PaletteCurve {
@@ -24,24 +25,29 @@ impl Clone for PaletteCurve {
         PaletteCurve {
             num_points: self.num_points,
             amplitude: self.amplitude,
+            amplitude_phase: self.amplitude_phase,
             oscilation: self.oscilation,
+            oscilation_phase: self.oscilation_phase,
             harmonic: self.harmonic,
             z_range: self.z_range,
-            phi: self.phi,
         }
     }
 }
 
 impl PaletteCurve {
     /// Create a new PaletteCurve with the given parameters
+    ///
+    /// - `harmonic`: Number of cycles in the XY plane (frequency)
     pub fn sample(
         &self,
         t: f32,
     ) -> Vec3A {
-        let theta = 2.0 * PI * self.harmonic as f32 * t;
-        let r = self.amplitude * (3.0 * theta + self.phi).sin()
-            + self.oscilation * (self.harmonic as f32 * theta).sin();
-        
+        // theta cycles harmonic times in the XY plane as t goes from 0 to 1
+        let random_scale = rand::random::<f32>() * 1.0 + 0.5; // [0.5, 1.5)
+        let theta = 2.0 * PI * self.harmonic * t * random_scale;
+        let r = self.amplitude * (theta + self.amplitude_phase).sin()
+            + self.oscilation * (self.harmonic * theta + self.oscilation_phase).sin();
+
         let x = 0.5 + r * theta.cos() * self.amplitude;
         let y = 0.5 + r * theta.sin() * self.amplitude;
         let z = self.z_range.0 + t * (self.z_range.1 - self.z_range.0);
@@ -88,18 +94,20 @@ impl PaletteCurve {
     pub fn new(
         num_points: usize,
         amplitude: f32,
+        amplitude_phase: f32,
         oscilation: f32,
-        harmonic: usize,
+        oscilation_phase: f32,
+        harmonic: f32,
         z_range: (f32, f32),
-        phi: f32,
     ) -> Self {
         PaletteCurve {
             num_points,
             amplitude,
+            amplitude_phase,
             oscilation,
+            oscilation_phase,
             harmonic,
             z_range,
-            phi,
         }
     }
 
@@ -115,6 +123,12 @@ impl PaletteCurve {
             let vec3a = color.to_vec3a();
             let closest_point = self.get_closest_point(&vec3a);
             let error = closest_point.distance_squared(vec3a);
+            // println!(
+            //     "Color: ({:.3}, {:.3}, {:.3}), Closest Point: ({:.3}, {:.3}, {:.3}), Error: {:.3}",
+            //     vec3a.x, vec3a.y, vec3a.z,
+            //     closest_point.x, closest_point.y, closest_point.z,
+            //     error
+            // );
             total_error += error * (*count as f32);
             total_count += count;
         }
@@ -140,29 +154,37 @@ impl PaletteCurve {
             );
         }
 
-        let search_range_z = (-1.0, 2.0);
+        let search_range_z = (0.0, 1.0);
         let search_range_amplitude = (0.0, 1.0);
+        let search_range_amplitude_phase = (0.0, 2.0 * PI);
         let search_range_oscilation = (-1.0, 2.0);
-        let search_range_harmonic = (1, 8);
-        let search_range_phi = (0f32, 2.0 * PI);
-
+        let search_range_oscilation_phase = (0.0, 2.0 * PI);
+        // harmonic is a random f32 in [0,1]^2 * 8
         let mut rng = rand::thread_rng();
         let mut curves = Vec::with_capacity(SEARCH_DEPTH);
 
         for _ in 0..SEARCH_DEPTH {
             let amplitude = rng.gen_range(search_range_amplitude.0..=search_range_amplitude.1);
+            let amplitude_phase = rng.gen_range(search_range_amplitude_phase.0..=search_range_amplitude_phase.1);
             let oscilation = rng.gen_range(search_range_oscilation.0..=search_range_oscilation.1);
-            let harmonic = rng.gen_range(search_range_harmonic.0..=search_range_harmonic.1);
-            let phi = rng.gen_range(search_range_phi.0..=search_range_phi.1);
+            let oscilation_phase = rng.gen_range(search_range_oscilation_phase.0..=search_range_oscilation_phase.1);
+            
+            let harmonic = {
+                let r = rng.gen_range(0.0..=1.0);
+                let r_squared = r * r;
+                1f32 + r_squared * 7f32 // Scale to [1, 8]
+            };
+
             let z_min = rng.gen_range(search_range_z.0..=search_range_z.1);
             let z_max = rng.gen_range(z_min..=search_range_z.1);
             let curve = PaletteCurve::new(
                 num_points,
                 amplitude,
+                amplitude_phase,
                 oscilation,
+                oscilation_phase,
                 harmonic,
                 (z_min, z_max),
-                phi,
             );
             curves.push(curve);
         }
@@ -207,48 +229,51 @@ impl PaletteCurve {
 
     /// Get a detailed multiline description of the curve
     pub fn describe(&self) -> String {
-        format!(
+        let mut desc = format!(
             "PaletteCurve Analysis:\n\
-            ┌─────────────────────────────────────┐\n\
-            │ Parameters:                         │\n\
-            │   • Sample Points: {:>15}    │\n\
-            │   • Amplitude:     {:>15.4}    │\n\
-            │   • Oscillation:   {:>15.4}    │\n\
-            │   • Harmonic:      {:>15}    │\n\
-            │   • Z Range:       ({:>6.3}, {:>6.3}) │\n\
-            │   • Phase (φ):     {:>15.4}    │\n\
-            │   • Phase (deg):   {:>12.1}°    │\n\
-            ├─────────────────────────────────────┤\n\
-            │ Curve Properties:                   │\n\
-            │   • Z Span:        {:>15.4}    │\n\
-            │   • Frequency:     {:>15.1}    │\n\
-            │   • Complexity:    {:>15}    │\n\
-            └─────────────────────────────────────┘",
+┌──────────────────────────────────────────────┐\n\
+│ Parameters:                                 │\n\
+│   • Sample Points:   {:>4}                  │\n\
+│   • Amplitude:      {:>8.4}                 │\n\
+│   • Amplitude Phase:{:>8.4}                 │\n\
+│   • Oscillation:    {:>8.4}                 │\n\
+│   • Oscillation Phase:{:>8.4}               │\n\
+│   • Harmonic:       {:>8.4}                 │\n\
+│   • Z Range:   ({:>7.3}, {:>7.3})           │\n\
+├──────────────────────────────────────────────┤\n\
+│ Curve Properties:                           │\n\
+│   • Z Span:         {:>8.4}                 │\n\
+│   • Frequency:      {:>8.4}                 │\n\
+│   • Complexity:     {:<8}                   │\n\
+└──────────────────────────────────────────────┘\n",
             self.num_points,
             self.amplitude,
+            self.amplitude_phase,
             self.oscilation,
+            self.oscilation_phase,
             self.harmonic,
             self.z_range.0,
             self.z_range.1,
-            self.phi,
-            self.phi * 180.0 / PI,
             self.z_range.1 - self.z_range.0,
-            self.harmonic as f32 * 2.0 * PI,
-            if self.harmonic > 5 { "High" } else if self.harmonic > 2 { "Medium" } else { "Low" }
-        )
+            self.harmonic * 2.0 * PI,
+            if self.harmonic > 5.0 { "High" } else if self.harmonic > 2.0 { "Medium" } else { "Low" }
+        );
+
+        desc
     }
 
     /// Get a compact one-line summary
     pub fn summary(&self) -> String {
         format!(
-            "PaletteCurve[pts={}, amp={:.3}, osc={:.3}, harm={}, z=({:.3},{:.3}), φ={:.3}]",
+            "PaletteCurve[pts={}, amp={:.3}, amp_phase={:.3}, osc={:.3}, osc_phase={:.3}, harm={:.3}, z=({:.3},{:.3})]",
             self.num_points,
-            self.amplitude, 
+            self.amplitude,
+            self.amplitude_phase,
             self.oscilation,
+            self.oscilation_phase,
             self.harmonic,
             self.z_range.0,
-            self.z_range.1,
-            self.phi
+            self.z_range.1
         )
     }
 }
@@ -259,19 +284,20 @@ impl fmt::Display for PaletteCurve {
             "PaletteCurve {{\n\
             \x20\x20num_points: {},\n\
             \x20\x20amplitude: {:.4},\n\
+            \x20\x20amplitude_phase: {:.4},\n\
             \x20\x20oscillation: {:.4},\n\
-            \x20\x20harmonic: {},\n\
-            \x20\x20z_range: ({:.4}, {:.4}),\n\
-            \x20\x20phi: {:.4} ({}°)\n\
+            \x20\x20oscillation_phase: {:.4},\n\
+            \x20\x20harmonic: {:.4},\n\
+            \x20\x20z_range: ({:.4}, {:.4})\n\
             }}",
             self.num_points,
             self.amplitude,
+            self.amplitude_phase,
             self.oscilation,
+            self.oscilation_phase,
             self.harmonic,
             self.z_range.0,
-            self.z_range.1,
-            self.phi,
-            self.phi * 180.0 / PI
+            self.z_range.1
         )
     }
 }
@@ -281,11 +307,11 @@ impl fmt::Debug for PaletteCurve {
         f.debug_struct("PaletteCurve")
             .field("num_points", &self.num_points)
             .field("amplitude", &self.amplitude)
+            .field("amplitude_phase", &self.amplitude_phase)
             .field("oscillation", &self.oscilation)
+            .field("oscillation_phase", &self.oscilation_phase)
             .field("harmonic", &self.harmonic)
             .field("z_range", &self.z_range)
-            .field("phi_radians", &self.phi)
-            .field("phi_degrees", &(self.phi * 180.0 / PI))
             .finish()
     }
 }
