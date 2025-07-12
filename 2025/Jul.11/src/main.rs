@@ -39,7 +39,7 @@ fn main() {
     let mut best_curves = Vec::new();
     for (i, color_counts) in hashmaps.iter().enumerate() {
         println!("\n🎨 Processing Image {}...", i + 1);
-        let best_curve = PaletteCurve::best_fit(color_counts, 1000);
+        let best_curve = PaletteCurve::best_fit(color_counts, 127);
         println!("✅ Best fit curve found for Image {}", i + 1);
         
         // Print detailed curve analysis

@@ -6,6 +6,9 @@ use std::collections::HashMap;
 use std::fmt;
 use indicatif::{ProgressBar, ProgressStyle};
 use std::sync::{Arc, Mutex};
+use rand::Rng;
+
+const SEARCH_DEPTH: usize = 2000; // Number of random samples for curve fitting
 
 pub struct PaletteCurve {
     pub num_points: usize,
@@ -143,57 +146,27 @@ impl PaletteCurve {
         let search_range_harmonic = (1, 8);
         let search_range_phi = (0f32, 2.0 * PI);
 
-        let curves_per_parameter = 8;
-        let n = curves_per_parameter as f32;
-        let increment_z = (search_range_z.1 - search_range_z.0) / n;
-        let increment_amplitude = (search_range_amplitude.1 - search_range_amplitude.0) / n;
-        let increment_oscilation = (search_range_oscilation.1 - search_range_oscilation.0) / n;
-        let increment_harmonic = (search_range_harmonic.1 - search_range_harmonic.0) as f32 / n;
-        let increment_phi = (search_range_phi.1 - search_range_phi.0) / n;
+        let mut rng = rand::thread_rng();
+        let mut curves = Vec::with_capacity(SEARCH_DEPTH);
 
-        let mut curves = Vec::new();
-
-        for z in (0..curves_per_parameter).map(|i| {
-            search_range_z.0 + i as f32 * increment_z
-        }) {
-            for amplitude in (0..curves_per_parameter).map(|i| {
-                search_range_amplitude.0 + i as f32 * increment_amplitude
-            }) {
-                for oscilation in (0..curves_per_parameter).map(|i| {
-                    search_range_oscilation.0 + i as f32 * increment_oscilation
-                }) {
-                    for harmonic in (1..=search_range_harmonic.1).map(|i| {
-                        i as f32 * increment_harmonic
-                    }) {
-                        for phi in (0..curves_per_parameter).map(|i| {
-                            search_range_phi.0 + i as f32 * increment_phi
-                        }) {
-                            for z_range_index in 0..curves_per_parameter {
-                                let z_range_min = z + increment_z * z_range_index as f32;
-                                for z_range_max_index in z_range_index..curves_per_parameter {
-                                    let z_range_max = z + increment_z * z_range_max_index as f32;
-                                    if z_range_max < z_range_min {
-                                        continue;
-                                    }
-                                    let curve = PaletteCurve::new(
-                                        num_points,
-                                        amplitude,
-                                        oscilation,
-                                        harmonic as usize,
-                                        (z_range_min, z_range_max),
-                                        phi,
-                                    );
-                                    
-                                    curves.push(curve);
-                                    
-                                }
-                            }                            
-                        }
-                    }
-                }
-            }
+        for _ in 0..SEARCH_DEPTH {
+            let amplitude = rng.gen_range(search_range_amplitude.0..=search_range_amplitude.1);
+            let oscilation = rng.gen_range(search_range_oscilation.0..=search_range_oscilation.1);
+            let harmonic = rng.gen_range(search_range_harmonic.0..=search_range_harmonic.1);
+            let phi = rng.gen_range(search_range_phi.0..=search_range_phi.1);
+            let z_min = rng.gen_range(search_range_z.0..=search_range_z.1);
+            let z_max = rng.gen_range(z_min..=search_range_z.1);
+            let curve = PaletteCurve::new(
+                num_points,
+                amplitude,
+                oscilation,
+                harmonic,
+                (z_min, z_max),
+                phi,
+            );
+            curves.push(curve);
         }
-        println!("Created {} curves for evaluation.", curves.len());
+        println!("Randomized {} curves for evaluation.", curves.len());
 
         // Create progress bar with custom style (32 chars max)
         let pb = ProgressBar::new(curves.len() as u64);
@@ -211,12 +184,10 @@ impl PaletteCurve {
             .par_iter()
             .map(|curve| {
                 let error = curve.mean_square_error(color_counts);
-                
                 // Update progress bar
                 if let Ok(pb) = pb_arc.lock() {
                     pb.inc(1);
                 }
-                
                 error
             }).collect();
 
