@@ -8,7 +8,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 use std::sync::{Arc, Mutex};
 use rand::Rng;
 
-const SEARCH_DEPTH: usize = 2048; // Number of random curves to generate for curve fitting
+const SEARCH_DEPTH: usize = 4096; // Number of random curves to generate for curve fitting
 
 pub struct PaletteCurve {
     pub num_points: usize,
