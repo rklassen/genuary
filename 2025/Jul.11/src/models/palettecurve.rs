@@ -1,5 +1,11 @@
 use glam::Vec3A;
 use std::f32::consts::PI;
+use rayon::prelude::*;
+use crate::models::imagetovec::Color;
+use std::collections::HashMap;
+use std::fmt;
+use indicatif::{ProgressBar, ProgressStyle};
+use std::sync::{Arc, Mutex};
 
 pub struct PaletteCurve {
     pub num_points: usize,
@@ -8,6 +14,19 @@ pub struct PaletteCurve {
     pub harmonic: usize,
     pub z_range: (f32, f32), // z range for the curve
     pub phi: f32, // phase shift
+}
+
+impl Clone for PaletteCurve {
+    fn clone(&self) -> Self {
+        PaletteCurve {
+            num_points: self.num_points,
+            amplitude: self.amplitude,
+            oscilation: self.oscilation,
+            harmonic: self.harmonic,
+            z_range: self.z_range,
+            phi: self.phi,
+        }
+    }
 }
 
 impl PaletteCurve {
@@ -81,33 +100,42 @@ impl PaletteCurve {
         }
     }
 
-    /// calculate error for an array of vecs
+    /// calculate error for a HashMap of colors with counts
     pub fn mean_square_error(
         &self,
-        points: &[Vec3A],
+        color_counts: &HashMap<Color, usize>,
     ) -> f32 {
-        points.iter()
-            .map(|p| {
-                self.get_closest_point(p).distance_squared(*p)
-            })
-            .sum::<f32>() / points.len() as f32
+        let mut total_error = 0.0;
+        let mut total_count = 0;
+
+        for (color, count) in color_counts {
+            let vec3a = color.to_vec3a();
+            let closest_point = self.get_closest_point(&vec3a);
+            let error = closest_point.distance_squared(vec3a);
+            total_error += error * (*count as f32);
+            total_count += count;
+        }
+
+        total_error / total_count as f32
     }
 
-    /// Best fit an array of vec3a's to a curve
-    /// colors are assumedly clamped in unit range [0.0, 1.0]
+    /// Best fit a HashMap of colors with counts to a curve
+    /// color_counts is a HashMap mapping colors to their occurrence counts
+    /// returns a new PaletteCurve that best fits the given colors weighted by frequency
     pub fn best_fit(
-        colors: &[Vec3A],
+        color_counts: &HashMap<Color, usize>,
         num_points: usize,
     ) -> Self {
-   
-        assert!(
-            colors.iter().all(|p| {
-                (0.0..=1.0).contains(&p.x) &&
-                (0.0..=1.0).contains(&p.y) &&
-                (0.0..=1.0).contains(&p.z)
-            }),
-            "Each color component c must be 0.0 ≤ c ≤ 1.0."
-        );
+        // Validate that all colors are in 0-1 range
+        for color in color_counts.keys() {
+            let vec3a = color.to_vec3a();
+            assert!(
+                (0.0..=1.0).contains(&vec3a.x) &&
+                (0.0..=1.0).contains(&vec3a.y) &&
+                (0.0..=1.0).contains(&vec3a.z),
+                "Each color component c must be 0.0 ≤ c ≤ 1.0."
+            );
+        }
 
         let search_range_z = (-1.0, 2.0);
         let search_range_amplitude = (0.0, 1.0);
@@ -124,7 +152,6 @@ impl PaletteCurve {
         let increment_phi = (search_range_phi.1 - search_range_phi.0) / n;
 
         let mut curves = Vec::new();
-        let errors = Vec::new();
 
         for z in (0..curves_per_parameter).map(|i| {
             search_range_z.0 + i as f32 * increment_z
@@ -141,7 +168,6 @@ impl PaletteCurve {
                         for phi in (0..curves_per_parameter).map(|i| {
                             search_range_phi.0 + i as f32 * increment_phi
                         }) {
-
                             for z_range_index in 0..curves_per_parameter {
                                 let z_range_min = z + increment_z * z_range_index as f32;
                                 for z_range_max_index in z_range_index..curves_per_parameter {
@@ -157,15 +183,46 @@ impl PaletteCurve {
                                         (z_range_min, z_range_max),
                                         phi,
                                     );
-                                    let error = curve.mean_square_error(colors);
+                                    
                                     curves.push(curve);
-                                    errors.push(error);
+                                    
                                 }
                             }                            
                         }
                     }
                 }
             }
+        }
+        println!("Created {} curves for evaluation.", curves.len());
+
+        // Create progress bar with custom style (32 chars max)
+        let pb = ProgressBar::new(curves.len() as u64);
+        pb.set_style(
+            ProgressStyle::default_bar()
+                .template("{prefix} [{bar:20.cyan/blue}] {pos}/{len}")
+                .unwrap()
+                .progress_chars("█▉▊▋▌▍▎▏ ")
+        );
+        pb.set_prefix("Evaluating");
+
+        let pb_arc = Arc::new(Mutex::new(pb));
+
+        let errors: Vec<f32> = curves
+            .par_iter()
+            .map(|curve| {
+                let error = curve.mean_square_error(color_counts);
+                
+                // Update progress bar
+                if let Ok(pb) = pb_arc.lock() {
+                    pb.inc(1);
+                }
+                
+                error
+            }).collect();
+
+        // Finish progress bar
+        if let Ok(pb) = pb_arc.lock() {
+            pb.finish_with_message("✓ Complete");
         }
 
         let (best_index, _) = errors
@@ -175,6 +232,89 @@ impl PaletteCurve {
             .unwrap_or((0, &f32::MAX));
 
         curves[best_index].clone()
+    }
 
+    /// Get a detailed multiline description of the curve
+    pub fn describe(&self) -> String {
+        format!(
+            "PaletteCurve Analysis:\n\
+            ┌─────────────────────────────────────┐\n\
+            │ Parameters:                         │\n\
+            │   • Sample Points: {:>15}    │\n\
+            │   • Amplitude:     {:>15.4}    │\n\
+            │   • Oscillation:   {:>15.4}    │\n\
+            │   • Harmonic:      {:>15}    │\n\
+            │   • Z Range:       ({:>6.3}, {:>6.3}) │\n\
+            │   • Phase (φ):     {:>15.4}    │\n\
+            │   • Phase (deg):   {:>12.1}°    │\n\
+            ├─────────────────────────────────────┤\n\
+            │ Curve Properties:                   │\n\
+            │   • Z Span:        {:>15.4}    │\n\
+            │   • Frequency:     {:>15.1}    │\n\
+            │   • Complexity:    {:>15}    │\n\
+            └─────────────────────────────────────┘",
+            self.num_points,
+            self.amplitude,
+            self.oscilation,
+            self.harmonic,
+            self.z_range.0,
+            self.z_range.1,
+            self.phi,
+            self.phi * 180.0 / PI,
+            self.z_range.1 - self.z_range.0,
+            self.harmonic as f32 * 2.0 * PI,
+            if self.harmonic > 5 { "High" } else if self.harmonic > 2 { "Medium" } else { "Low" }
+        )
+    }
+
+    /// Get a compact one-line summary
+    pub fn summary(&self) -> String {
+        format!(
+            "PaletteCurve[pts={}, amp={:.3}, osc={:.3}, harm={}, z=({:.3},{:.3}), φ={:.3}]",
+            self.num_points,
+            self.amplitude, 
+            self.oscilation,
+            self.harmonic,
+            self.z_range.0,
+            self.z_range.1,
+            self.phi
+        )
+    }
+}
+
+impl fmt::Display for PaletteCurve {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, 
+            "PaletteCurve {{\n\
+            \x20\x20num_points: {},\n\
+            \x20\x20amplitude: {:.4},\n\
+            \x20\x20oscillation: {:.4},\n\
+            \x20\x20harmonic: {},\n\
+            \x20\x20z_range: ({:.4}, {:.4}),\n\
+            \x20\x20phi: {:.4} ({}°)\n\
+            }}",
+            self.num_points,
+            self.amplitude,
+            self.oscilation,
+            self.harmonic,
+            self.z_range.0,
+            self.z_range.1,
+            self.phi,
+            self.phi * 180.0 / PI
+        )
+    }
+}
+
+impl fmt::Debug for PaletteCurve {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PaletteCurve")
+            .field("num_points", &self.num_points)
+            .field("amplitude", &self.amplitude)
+            .field("oscillation", &self.oscilation)
+            .field("harmonic", &self.harmonic)
+            .field("z_range", &self.z_range)
+            .field("phi_radians", &self.phi)
+            .field("phi_degrees", &(self.phi * 180.0 / PI))
+            .finish()
     }
 }

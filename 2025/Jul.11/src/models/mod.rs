@@ -1,3 +1,5 @@
-pub mod point;
+pub mod palettecurve;
+pub use palettecurve::PaletteCurve;
 
-pub use point::Point;
+pub mod imagetovec;
+pub use imagetovec::*;
