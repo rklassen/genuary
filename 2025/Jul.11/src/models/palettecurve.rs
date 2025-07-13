@@ -8,7 +8,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 use std::sync::{Arc, Mutex};
 use rand::Rng;
 
-const SEARCH_DEPTH: usize = 8 * 8192; // Number of random curves to generate for curve fitting
+const SEARCH_DEPTH: usize = 1 * 8192; // Number of random curves to generate for curve fitting
 
 pub struct PaletteCurve {
     pub num_points: usize,
@@ -155,11 +155,6 @@ impl PaletteCurve {
    • Oscillation:        {:>8.4}             \n\
    • Oscillation Phase:  {:>8.4}             \n\
    • Harmonic:           {:>8.4}             \n\
-   • Z Range:     ({:>7.3}, {:>7.3})         \n\
-──────────────────────────────────────────────\n\
- Curve Properties:                           \n\
-   • Z Span:             {:>8.4}             \n\
-   • Frequency:          {:>8.4}             \n\
    • Complexity:         {:<8}               \n\
 ──────────────────────────────────────────────\n",
             self.num_points,
@@ -168,10 +163,6 @@ impl PaletteCurve {
             self.oscilation,
             self.oscilation_phase,
             self.harmonic,
-            self.z_range.0,
-            self.z_range.1,
-            self.z_range.1 - self.z_range.0,
-            self.harmonic * 2.0 * PI,
             if self.harmonic > 5.0 { "High" } else if self.harmonic > 2.0 { "Medium" } else { "Low" }
         );
 

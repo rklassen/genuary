@@ -24,7 +24,7 @@ use models::u8rgba_to_color_counts;
 use webp::Encoder;
 use std::fs::File;
 use std::io::Write;
-const TOP_COLORS_COUNT: usize = 512; // Limit to top N colors for each image
+const TOP_COLORS_COUNT: usize = 2048; // Limit to top N colors for each image
 /// 1. Load an image
 /// 2. Extract the palette, all pixels
 /// 3. Generate all curves at increment x or n number
@@ -35,8 +35,8 @@ const TOP_COLORS_COUNT: usize = 512; // Limit to top N colors for each image
 fn main() {
     let image_paths = vec![
         PathBuf::from("_input/flower-9294773_1920.png"),
-        // PathBuf::from("_input/grasshopper-9363974_1280.jpg"),
-        // PathBuf::from("_input/mountain-9533968_1920.jpg"),
+        PathBuf::from("_input/grasshopper-9363974_1280.jpg"),
+        PathBuf::from("_input/mountain-9533968_1920.jpg"),
     ];
 
     // Load images and store pixel data and dimensions
@@ -105,6 +105,11 @@ fn main() {
             p.set_extension("png");
             p.to_string_lossy().to_string()
         };
+        let md_path = {
+            let mut p = PathBuf::from(&base_out_path);
+            p.set_extension("md");
+            p.to_string_lossy().to_string()
+        };
         match save_pixels_as_webp(&mapped_pixels, width, height, &webp_path, 80.0) {
             Ok(_) => {},
             Err(e) => eprintln!("❌ Failed to save WebP: {}", e),
@@ -112,6 +117,18 @@ fn main() {
         match save_pixels_as_png(&mapped_pixels, width, height, &png_path) {
             Ok(_) => {},
             Err(e) => eprintln!("❌ Failed to save PNG: {}", e),
+        }
+        // Write markdown file with dimensions and curve display string
+        let md_content = format!(
+            "# Image Info\n\n- **Dimensions:** {}x{}\n\n## Curve Details\n\n{}\n",
+            width, height, best_curve.describe()
+        );
+        if let Some(parent) = std::path::Path::new(&md_path).parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        match std::fs::write(&md_path, md_content) {
+            Ok(_) => println!("✅ Markdown info saved to {}", md_path),
+            Err(e) => eprintln!("❌ Failed to save markdown: {}", e),
         }
     }
 
