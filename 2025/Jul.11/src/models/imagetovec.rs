@@ -73,23 +73,23 @@ impl Color {
     }
 }
 
-/// Convert an image file to a vector of u8 RGB pixels
+/// Convert an image file to a vector of u8 RGB pixels and return dimensions
 pub fn image_to_vec_u8rgb(
     path: &str
-) -> Result<Vec<[u8; 3]>, image::ImageError> {
+) -> Result<(Vec<[u8; 4]>, u32, u32), image::ImageError> {
     let img = image::open(path)?;
     let (width, height) = img.dimensions();
     let mut pixels = Vec::with_capacity((width * height) as usize);
 
     for (_, _, pixel) in img.pixels() {
         let rgb = pixel.to_rgb();
-        pixels.push([rgb[0], rgb[1], rgb[2]]);
+        pixels.push([rgb[0], rgb[1], rgb[2], 255]);
     }
 
-    Ok(pixels)
+    Ok((pixels, width, height))
 }
 
-pub fn u8rgba_to_color_counts(pixels: Vec<[u8; 3]>) -> HashMap<Color, usize> {
+pub fn u8rgba_to_color_counts(pixels: Vec<[u8; 4]>) -> HashMap<Color, usize> {
     let mut counts: HashMap<Color, usize> = HashMap::new();
 
     for pixel in pixels.iter() {

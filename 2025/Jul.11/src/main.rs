@@ -5,7 +5,8 @@ fn print_color_histogram(color_counts: &std::collections::HashMap<models::imaget
     color_vec.sort_by(|a, b| b.1.cmp(a.1)); // Sort descending by count
     // Find the max width needed for the count field
     let count_width = color_vec.iter().map(|(_, c)| c.to_string().len()).max().unwrap_or(1);
-    for (color, count) in color_vec {
+    for (i, (color, count)) in color_vec.iter().enumerate() {
+        if i >= 12 { break; }
         let bar_len = (40 * *count / max_count).max(1); // scale to max 40 chars
         let bar = "█".repeat(bar_len);
         println!(
@@ -38,12 +39,16 @@ fn main() {
         // PathBuf::from("_input/mountain-9533968_1920.jpg"),
     ];
 
-    let pixels_vec: Vec<_> = image_paths
-        .iter()
-        .map(|path| image_to_vec_u8rgb(
-            &path.to_string_lossy()
-        ).expect("Failed to load image"))
-        .collect();
+    // Load images and store pixel data and dimensions
+    let mut pixels_vec = Vec::new();
+    let mut dimensions_vec = Vec::new();
+    for path in image_paths.iter() {
+        let (pixels, width, height) = image_to_vec_u8rgb(&path.to_string_lossy())
+            .expect("Failed to load image");
+        println!("Loaded image: {} (dimensions: {}x{})", path.display(), width, height);
+        pixels_vec.push(pixels);
+        dimensions_vec.push((width, height));
+    }
 
     println!("Successfully loaded {} images to u8 pixels.", pixels_vec.len());
     
@@ -111,45 +116,27 @@ fn main() {
 
     for (i, pixels_u8) in pixels_vec.iter().enumerate() {
         let best_curve = &best_curves[i];
-        
-        // Load the image to get dimensions and proper RGB data
-        let img = image::open(&image_paths[i]).expect("Failed to open image for dimensions");
-        let width = img.width();
-        let height = img.height();
+        let (width, height) = dimensions_vec[i];
         println!("\n🖼️ Processing image {}x{} pixels", width, height);
-        
-        // Convert to RGB/RGBA bytes
         let flat_pixels: Vec<u8> = pixels_u8.iter().flat_map(|rgb| rgb.iter()).copied().collect();
         println!("Flat pixel buffer size: {} bytes", flat_pixels.len());
-        
-        // Map pixels through the curve
         let mapped_pixels = map_pixels_to_curve(best_curve, &flat_pixels);
-        
-        // Prepare output paths
         let orig_path = &image_paths[i];
         let base_out_path = orig_path.to_string_lossy().replace("_input/", "_output/");
-        
-        // Generate WebP path
         let webp_path = {
             let mut p = PathBuf::from(&base_out_path);
             p.set_extension("webp");
             p.to_string_lossy().to_string()
         };
-        
-        // Generate PNG path
         let png_path = {
             let mut p = PathBuf::from(&base_out_path);
             p.set_extension("png");
             p.to_string_lossy().to_string()
         };
-        
-        // Save WebP
         match save_pixels_as_webp(&mapped_pixels, width, height, &webp_path, 80.0) {
             Ok(_) => println!("📸 Saved WebP image to {}", webp_path),
             Err(e) => eprintln!("❌ Failed to save WebP: {}", e),
         }
-        
-        // Save PNG
         match save_pixels_as_png(&mapped_pixels, width, height, &png_path) {
             Ok(_) => println!("📸 Saved PNG image to {}", png_path),
             Err(e) => eprintln!("❌ Failed to save PNG: {}", e),
@@ -340,10 +327,7 @@ fn map_pixels_to_curve(curve: &PaletteCurve, input_pixels: &[u8]) -> Vec<u8> {
     println!("Input pixels: {} bytes, {} channels per pixel", input_pixels.len(), channels);
     println!("Processing {} pixels to RGBA format", input_pixel_count);
     
-    let curve_colors = curve.colors();
-    println!("Curve colors: {:?}", curve_colors.iter().take(10).collect::<Vec<_>>());
     let curve_points = curve.points();
-    println!("Curve points: {:?}", curve_points.iter().take(10).collect::<Vec<_>>());
 
     for chunk in input_pixels.chunks(channels) {
         if chunk.len() < 3 {
