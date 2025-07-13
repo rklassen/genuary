@@ -1,29 +1,11 @@
-/// Print a histogram of color frequencies for a given color_counts HashMap
-fn print_color_histogram(color_counts: &std::collections::HashMap<models::imagetovec::Color, usize>) {
-    let max_count = color_counts.values().copied().max().unwrap_or(1);
-    let mut color_vec: Vec<_> = color_counts.iter().collect();
-    color_vec.sort_by(|a, b| b.1.cmp(a.1)); // Sort descending by count
-    // Find the max width needed for the count field
-    let count_width = color_vec.iter().map(|(_, c)| c.to_string().len()).max().unwrap_or(1);
-    for (i, (color, count)) in color_vec.iter().enumerate() {
-        if i >= 12 { break; }
-        let bar_len = (40 * *count / max_count).max(1); // scale to max 40 chars
-        let bar = "█".repeat(bar_len);
-        println!(
-            "{:>3},{:>3},{:>3} | {:>width$} | {}",
-            color.r, color.g, color.b, count, bar, width = count_width
-        );
-    }
-}
-use std::path::PathBuf;
-
-mod models;
-use models::PaletteCurve;
 use models::image_to_vec_u8rgb;
+use models::PaletteCurve;
 use models::u8rgba_to_color_counts;
-use webp::Encoder;
 use std::fs::File;
 use std::io::Write;
+use std::path::PathBuf;
+mod models;
+
 const TOP_COLORS_COUNT: usize = 2048; // Limit to top N colors for each image
 /// 1. Load an image
 /// 2. Extract the palette, all pixels
@@ -32,12 +14,29 @@ const TOP_COLORS_COUNT: usize = 2048; // Limit to top N colors for each image
 /// 5. Report that curve data
 /// 6. For each input color, find nearest point on curve
 /// 7. Map input image to output image accordingly
-fn main() {
-    let image_paths = vec![
-        PathBuf::from("_input/flower-9294773_1920.png"),
-        PathBuf::from("_input/grasshopper-9363974_1280.jpg"),
-        PathBuf::from("_input/mountain-9533968_1920.jpg"),
-    ];
+fn main()
+{
+
+    for _ in 0..3 {
+        println!("\n{} Starting new iteration... {}", "=".repeat(20), "=".repeat(20));
+        let random_color = models::imagetovec::Color::random();
+        println!("Random Color RGB: r={}, g={}, b={}", random_color.r, random_color.g, random_color.b);
+        let (hue, sat, lum) = random_color.to_hsl();
+        println!("HSL: h={:.3}, s={:.3}, l={:.3}", hue, sat, lum);
+        let vec = models::imagetovec::Color::to_vec3a(hue, sat, lum);
+        println!("Vec3A: x={:.3}, y={:.3}, z={:.3}", vec.x, vec.y, vec.z);
+        let (h2, s2, l2) = models::imagetovec::Color::vec3a_to_hsl(vec);
+        println!("HSL from Vec3A: h={:.3}, s={:.3}, l={:.3}", h2, s2, l2);
+        let color2 = models::imagetovec::Color::from_hsl(h2, s2, l2);
+        println!("Color from HSL: r={}, g={}, b={}", color2.r, color2.g, color2.b);
+        println!("{} End of iteration {}", "=".repeat(20), "=".repeat(20));
+    }
+
+    let image_paths: Vec<PathBuf> = [
+        PathBuf::from("/Users/richardklassen/Developer/genuary/2025/Jul.11/_input/flower-9294773_1920.png"),
+        PathBuf::from("/Users/richardklassen/Developer/genuary/2025/Jul.11/_input/grasshopper-9363974_1280.jpg"),
+        PathBuf::from("/Users/richardklassen/Developer/genuary/2025/Jul.11/_input/mountain-9533968_1920.jpg"),
+    ].into();
 
     // Load images and store pixel data and dimensions
     let mut pixels_vec = Vec::new();
@@ -78,7 +77,10 @@ fn main() {
     for (i, color_counts) in top_colors.iter().enumerate() {
         println!("\n🎨 Processing Image {}...", i + 1);
         println!("Color Frequency Histogram for Image {}:", i + 1);
-        print_color_histogram(color_counts);
+        match print_color_histogram(color_counts){
+            Ok(()) => {},
+            Err(e) => eprintln!("❌ Failed to print histogram: {}", e),
+        };
         let best_curve = PaletteCurve::best_fit(color_counts, 255);
         println!("✅ Best fit curve found for Image {}", i + 1);
         println!("\n{}", best_curve.describe());
@@ -130,10 +132,16 @@ fn main() {
             Err(e) => eprintln!("❌ Failed to save PNG: {}", e),
         }
         // Write markdown file with dimensions and curve display string
-        let md_content = format!(
-            "# Image Info\n\n- **Dimensions:** {}x{}\n\n## Curve Details\n\n{}\n",
-            width, height, best_curve.describe()
-        );
+        let md_content = [
+            "# Image Info",
+            "",
+            "| Image Dimension | Value   |",
+            "|------------|---------|",
+            &format!("| Width      | {} |", width),
+            &format!("| Height     | {} |", height),
+            "",
+            &best_curve.describe(),
+        ].join("\n");
         if let Some(parent) = std::path::Path::new(&md_path).parent() {
             let _ = std::fs::create_dir_all(parent);
         }
@@ -155,90 +163,24 @@ fn main() {
 
 }
 
-/// Save the pixel data as a WebP image file
-fn save_pixels_as_webp(pixels: &[u8], width: u32, height: u32, out_path: &str, quality: f32) -> std::io::Result<()> {
-    // Create directory if it doesn't exist
-    if let Some(parent) = std::path::Path::new(out_path).parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-
-    // Calculate correct dimensions based on actual data size
-    let pixels_len = pixels.len();
-    let channels = if pixels_len % 4 == 0 { 4 } else { 3 };
-    let total_pixels = pixels_len / channels;
-    
-    // Terse debug info
-    println!(
-        "Dims: {}x{}, {} bytes, {} ch, {} px",
-        width, height, pixels_len, channels, total_pixels
-    );
-    
-    // Verify or recalculate dimensions
-    let (actual_width, actual_height) = {
-        if (width * height) as usize == total_pixels {
-            // Dimensions match pixel count
-            (width, height)
-        } else {
-            // Dimensions don't match, try to calculate them
-            println!("⚠️ Dimension mismatch! Attempting to calculate correct dimensions...");
-            // Try common image aspect ratios
-            if total_pixels == 1920 * 1279 {
-                println!("✅ Detected 1920x1279 image");
-                (1920, 1279)
-            } else if total_pixels == 1920 * 1280 {
-                println!("✅ Detected 1920x1280 image");
-                (1920, 1280)
-            } else {
-                // Keep width, adjust height
-                let calculated_height = total_pixels as u32 / width;
-                println!("⚠️ Using calculated dimensions: {}x{}", width, calculated_height);
-                (width, calculated_height)
-            }
-        }
-    };
-
-    // Handle the WebP encoding based on channel count
-    if channels == 3 {
-        // Create temporary RGBA buffer for RGB input
-        let mut rgba = Vec::with_capacity(total_pixels * 4);
-        for chunk in pixels.chunks(3) {
-            if chunk.len() < 3 {
-                continue; // Skip incomplete chunks
-            }
-            rgba.push(chunk[0]);
-            rgba.push(chunk[1]);
-            rgba.push(chunk[2]);
-            rgba.push(255); // Alpha
-        }
-        let encoder = Encoder::from_rgba(&rgba, actual_width, actual_height);
-        let webp = encoder.encode(quality);
-        
-        let mut file = File::create(out_path)?;
-        file.write_all(&webp)?;
-        
+/// Print a histogram of color frequencies for a given color_counts HashMap
+fn print_color_histogram(
+    color_counts: &std::collections::HashMap<models::imagetovec::Color, usize>
+) -> std::io::Result<()> {
+    let max_count = color_counts.values().copied().max().unwrap_or(1);
+    let mut color_vec: Vec<_> = color_counts.iter().collect();
+    color_vec.sort_by(|a, b| b.1.cmp(a.1)); // Sort descending by count
+    // Find the max width needed for the count field
+    let count_width = color_vec.iter().map(|(_, c)| c.to_string().len()).max().unwrap_or(1);
+    for (i, (color, count)) in color_vec.iter().enumerate() {
+        if i >= 12 { break; }
+        let bar_len = (40 * *count / max_count).max(1); // scale to max 40 chars
+        let bar = "█".repeat(bar_len);
         println!(
-            "✅ WebP encoded and saved to {} ({}x{}, {} bytes, from RGB)",
-            out_path,
-            actual_width,
-            actual_height,
-            webp.len()
+            "{:>3},{:>3},{:>3} | {:>width$} | {}",
+            color.r, color.g, color.b, count, bar, width = count_width
         );
-    } else if channels == 4 {
-        let encoder = Encoder::from_rgba(pixels, actual_width, actual_height);
-        let webp = encoder.encode(quality);
-        
-        let mut file = File::create(out_path)?;
-        file.write_all(&webp)?;
-        
-        println!("✅ WebP encoded and saved to {} ({}x{}, {} bytes, from RGBA)", 
-                out_path, actual_width, actual_height, webp.len());
-    } else {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            format!("Unsupported channel count: {}", channels)
-        ));
     }
-    
     Ok(())
 }
 
@@ -294,6 +236,69 @@ fn save_pixels_as_png(pixels: &[u8], width: u32, height: u32, out_path: &str) ->
     Ok(())
 }
 
+fn save_pixels_as_webp(
+    pixels: &[u8],
+    width: u32,
+    height: u32,
+    out_path: &str,
+    quality: f32,
+) -> std::io::Result<()> {
+    use webp::Encoder;
+    
+    // Create directory if it doesn't exist
+    if let Some(parent) = std::path::Path::new(out_path).parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    
+    // Calculate correct dimensions based on actual data size
+    let pixels_len = pixels.len();
+    let channels = if pixels_len % 4 == 0 { 4 } else { 3 };
+    
+    // Handle the WebP encoding based on channel count
+    if channels == 3 {
+        // Create temporary RGBA buffer for RGB input
+        let mut rgba = Vec::with_capacity(pixels_len / 3 * 4);
+        for chunk in pixels.chunks(3) {
+            if chunk.len() < 3 {
+                continue; // Skip incomplete chunks
+            }
+            rgba.push(chunk[0]);
+            rgba.push(chunk[1]);
+            rgba.push(chunk[2]);
+            rgba.push(255); // Alpha
+        }
+        let encoder = Encoder::from_rgba(&rgba, width, height);
+        let webp = encoder.encode(quality);
+        
+        let mut file = File::create(out_path)?;
+        file.write_all(&webp)?;
+        
+        println!(
+            "✅ WebP encoded and saved to {} ({}x{}, {} bytes, from RGB)",
+            out_path,
+            width,
+            height,
+            webp.len()
+        );
+    } else if channels == 4 {
+        let encoder = Encoder::from_rgba(pixels, width, height);
+        let webp = encoder.encode(quality);
+        
+        let mut file = File::create(out_path)?;
+        file.write_all(&webp)?;
+        
+        println!("✅ WebP encoded and saved to {} ({}x{}, {} bytes, from RGBA)", 
+                out_path, width, height, webp.len());
+    } else {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("Unsupported channel count: {}", channels)
+        ));
+    }
+    
+    Ok(())
+}
+
 /// Map each input pixel to the closest point on the curve, returning a new Vec<u8> in RGBA format
 fn map_pixels_to_curve(curve: &PaletteCurve, input_pixels: &[u8]) -> Vec<u8> {
     let channels = if input_pixels.len() % 4 == 0 { 4 } else { 3 };
@@ -330,18 +335,25 @@ fn map_pixels_to_curve(curve: &PaletteCurve, input_pixels: &[u8]) -> Vec<u8> {
             g: chunk[1],
             b: chunk[2],
         };
-        let input_vec = color.to_vec3a();
-        
+        let (hue, sat, lum) = color.to_hsl();
+        let input_vec = models::imagetovec::Color::to_vec3a(hue, sat, lum);
+
+        // Use PaletteCurve's error function to minimize error
         let closest_point = curve_points
             .iter()
             .min_by(|a, b| {
-                let da = (input_vec - **a).length_squared();
-                let db = (input_vec - **b).length_squared();
-                da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
+                PaletteCurve::error(**a, input_vec)
+                    .partial_cmp(&PaletteCurve::error(**b, input_vec))
+                    .unwrap_or(std::cmp::Ordering::Equal)
             })
             .unwrap_or(&curve_points[0]);
     
-        let closest_color = models::imagetovec::Color::from_vec3a(*closest_point);
+        let (h, s, l) = models::imagetovec::Color::vec3a_to_hsl(*closest_point);
+        // println!(
+        //     "Closest curve point HSL: h={:.3}, s={:.3}, l={:.3}",
+        //     h, s, l
+        // );
+        let closest_color = models::imagetovec::Color::from_hsl(h, s, l);
 
         // Convert curve point to u8 RGB
         output.push(closest_color.r);
@@ -353,8 +365,7 @@ fn map_pixels_to_curve(curve: &PaletteCurve, input_pixels: &[u8]) -> Vec<u8> {
     pb.finish_with_message("✓ Complete");
     // Manual ANSI color reset
     print!("\x1b[0m");
-    
+    // Print final output size
     println!("Generated {} bytes of RGBA data", output.len());
     output
 }
-

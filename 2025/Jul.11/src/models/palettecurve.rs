@@ -1,5 +1,4 @@
 use glam::Vec3A;
-use palette::{Srgb, Hsl};
 use std::{f32::consts::PI, path::PathBuf};
 use rayon::prelude::*;
 use crate::models::imagetovec::Color;
@@ -34,13 +33,6 @@ impl Clone for PaletteCurve {
 }
 
 impl PaletteCurve {
-    /// Convert RGB u8 to HSL (float) using the palette crate
-    pub fn rgb_u8_to_hsl(r: u8, g: u8, b: u8) -> (f32, f32, f32) {
-        let rgb = Srgb::new(r, g, b).into_format::<f32>().into_linear();
-        let hsl: Hsl = 
-        (hsl.hue.into(), hsl.saturation, hsl.lightness)
-    }
-
     /// Best fit a HashMap of colors with counts to a curve
     /// color_counts is a HashMap mapping colors to their occurrence counts
     /// returns a new PaletteCurve that best fits the given colors weighted by frequency
@@ -50,7 +42,9 @@ impl PaletteCurve {
     ) -> Self {
         // Validate that all colors are in 0-1 range
         for color in color_counts.keys() {
-            let vec3a = color.to_vec3a();
+
+            let (hue, sat, lum) = color.to_hsl();
+            let vec3a = Color::to_vec3a(hue, sat, lum);
             assert!(
                 (-1.0..=1.0).contains(&vec3a.x) &&
                 (-1.0..=1.0).contains(&vec3a.y),
@@ -140,48 +134,21 @@ impl PaletteCurve {
         curves[best_index].clone()
     }
 
-    #[allow(dead_code)]
-    /// Sample `n` points along the curve and convert each Vec3A to Color
-    pub fn colors_hsl(&self) -> Vec<(Color, (f32, f32, f32))> {
-        (0..self.num_points)
-            .map(|i| {
-                let t = i as f32 / (self.num_points - 1).max(1) as f32;
-                let vec = self.sample(t);
-                let color = Color::from_vec3a(vec);
-                let hsl = PaletteCurve::rgb_u8_to_hsl(color.r, color.g, color.b);
-                (color, hsl)
-            })
-            .collect()
-    }
-
     /// Get a detailed multiline description of the curve
     pub fn describe(&self) -> String {
-        let desc = format!(
-            "PaletteCurve Analysis:\n\
-──────────────────────────────────────────────\n\
- Parameters:                                 \n\
-   • Sample Points:      {:>4}               \n\
-   • Amplitude:          {:>8.4}             \n\
-   • Amplitude Phase:    {:>8.4}             \n\
-   • Oscillation:        {:>8.4}             \n\
-   • Oscillation Phase:  {:>8.4}             \n\
-   • Harmonic:           {:>8.4}             \n\
-   • Complexity:         {:<8}               \n\
-──────────────────────────────────────────────\n",
-            self.num_points,
-            self.amplitude,
-            self.amplitude_phase,
-            self.oscilation,
-            self.oscilation_phase,
-            self.harmonic,
-            if self.harmonic > 5.0 { "High" } else if self.harmonic > 2.0 { "Medium" } else { "Low" }
-        );
-
-        desc
+        [
+            "| PaletteCurve      | Values  |",
+            "|-------------------|---------|",
+            &format!("| Sample Points     | {} |", self.num_points),
+            &format!("| Amplitude         | {:.4} |", self.amplitude),
+            &format!("| Amplitude Phase   | {:.4} |", self.amplitude_phase),
+            &format!("| Oscillation       | {:.4} |", self.oscilation),
+            &format!("| Oscillation Phase | {:.4} |", self.oscilation_phase),
+            &format!("| Harmonic          | {:.4} |", self.harmonic),
+        ].join("\n")
     }
 
-
-    fn error(point: Vec3A, target: Vec3A) -> f32 {
+    pub fn error(point: Vec3A, target: Vec3A) -> f32 {
         
         let computed_xy = Vec3A::new(point.x, point.y, 0.0);
         let target_xy = Vec3A::new(target.x, target.y, 0.0);
@@ -230,7 +197,8 @@ impl PaletteCurve {
         let points = self.points();
 
         for (color, count) in color_counts {
-            let vec3a = color.to_vec3a();
+            let (hue, sat, lum) = color.to_hsl();
+            let vec3a = Color::to_vec3a(hue, sat, lum);
 
             let error = points
                 .iter()
@@ -317,7 +285,14 @@ impl PaletteCurve {
     ) -> Result<(), image::ImageError> {
 
         use image::{RgbImage, Rgb};
-        let colors_hsl = self.colors_hsl();
+        let colors_hsl = self.points()
+            .iter()
+            .map(|p| {
+                let (hue, sat, lum) = Color::vec3a_to_hsl(*p);
+                let color= Color::from_hsl(hue, sat, lum);
+                (color, (hue, sat, lum))
+            })
+            .collect::<Vec<_>>();
         let grid_size = 16;
         let square_size = 8;
         let img_size = grid_size * square_size; // 1024
@@ -338,24 +313,6 @@ impl PaletteCurve {
         }
         img.save(pathbuf)?;
         Ok(())
-    }
-
-    /// Convert a Vec3A to a Color
-    pub fn vec3a_to_hsl(
-        vec: Vec3A
-    ) -> Hsl {
-        // Normalize xy vector
-        let xy = glam::Vec2::new(vec.x, vec.y);
-        // atan2 returns [-PI, PI], map to [0, 1]
-        let direction = xy.clone().normalize_or_zero();
-        let mut hue = direction.y.atan2(direction.x) / (2.0 * std::f32::consts::PI);
-        if hue < 0.0 {
-            hue += 1.0;
-        }
-        // Use z as lightness, and length of xy as saturation
-        let lum = xy.length().clamp(0.0, 1.0);
-        let sat = vec.z.clamp(0.0, 1.0);
-        Hsl::new(hue, sat, lum)
     }
 
 }

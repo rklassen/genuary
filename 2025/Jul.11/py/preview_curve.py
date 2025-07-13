@@ -33,11 +33,11 @@ def random_harmonic():
 # Parameters from best fit curve
 n_curves = 1
 n_points = 255
-amplitude = 0.1
-amplitude_phase = 0.0
-oscilation = 0.1
-oscilation_phase = 0
-harmonic = 1.0
+amplitude = 0.5716
+amplitude_phase = 2.2763
+oscilation = 0.9581
+oscilation_phase = 5.1980
+harmonic = 1.4928
 
 fig = plt.figure(figsize=(12, 8))
 ax = fig.add_subplot(111, projection='3d')

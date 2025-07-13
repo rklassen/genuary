@@ -10,32 +10,83 @@ pub struct Color {
 }
 
 impl Color {
-    pub fn to_vec3a(&self) -> Vec3A {
-        // Convert RGB to floats in [0,1]
-        let r = self.r as f32 / 255.0;
-        let g = self.g as f32 / 255.0;
-        let b = self.b as f32 / 255.0;
+
+    pub fn from_hsl(hue: f32, sat: f32, lum: f32) -> Self {
+        let tolerance = 2e-2;
+        assert!(
+            (lum >= -tolerance) && (lum <= 1.0 + tolerance),
+            "lum must be between 0.0 and 1.0 (±{}), got {}",
+            tolerance,
+            lum
+        );
+        assert!(
+            (sat >= -tolerance) && (sat <= 1.0 + tolerance),
+            "sat must be between 0.0 and 1.0 (±{}), got {}",
+            tolerance,
+            sat
+        );
+        assert!(
+            (hue >= -tolerance) && (hue <= 1.0 + tolerance),
+            "hue must be between 0.0 and 1.0 (±{}), got {}",
+            tolerance,
+            hue
+        );
+        // Clamp lum after assertion
+
+        let theta = hue * 2.0 * std::f32::consts::PI;
+        let radius = lum;
+        let x = radius * theta.cos();
+        let y = radius * theta.sin();
+        let z = sat;
+
+        // Convert to RGB
+        let r = ((x + y) * 255.0).round() as u8;
+        let g = ((y - x) * 255.0).round() as u8;
+        let b = (z * 255.0).round() as u8;
+
+        Color { r, g, b }
+    }
+
+    pub fn random() -> Self {
+        use rand::Rng;
+        let mut rng = rand::thread_rng();
+        Color {
+            r: rng.gen_range(0..=255),
+            g: rng.gen_range(0..=255),
+            b: rng.gen_range(0..=255),
+        }
+    }
+
+    pub fn to_hsl(&self) -> (f32, f32, f32) {
+        // convert `float` to `u8`
+        let [r, g, b] = [self.r, self.g, self.b].map(|v| v as f32 / 255.0);
         // Convert to HSL
-        let max = r.max(g).max(b);
-        let min = r.min(g).min(b);
+        let (min, max) = (r.min(g).min(b), r.max(g).max(b));
         let lum = (max + min) / 2.0;
         let delta = max - min;
-        let sat = {
-            if delta == 0.0 { 0.0 }
-            else { delta / (1.0 - (2.0 * lum - 1.0).abs()) }
-        };
+        let sat = if delta == 0.0 { 0.0 } else { delta / (1.0 - (2.0 * lum - 1.0).abs()) };
         let hue = if delta == 0.0 {
             0.0
         } else {
-            match max {
-            _ if max == r => 60.0 * ((g - b) / delta).rem_euclid(6.0),
-            _ if max == g => 60.0 * ((b - r) / delta + 2.0),
-            _ => 60.0 * ((r - g) / delta + 4.0),
-            }
+            let h = match max {
+                _ if max == r => ((g - b) / delta).rem_euclid(6.0),
+                _ if max == g => (b - r) / delta + 2.0,
+                _ => (r - g) / delta + 4.0,
+            };
+            h / 6.0 // scale [0,6) to [0,1)
         };
-        // Normalize hue to [0,1]
-        let hue_norm = ((hue / 360.0) + 1.0) % 1.0;
-        let theta = hue_norm * 2.0 * std::f32::consts::PI;
+        (hue, sat, lum)
+    }
+
+    pub fn to_vec3a(
+        hue: f32,
+        sat: f32,
+        lum: f32,
+    ) -> Vec3A {
+        
+        assert!((hue >= 0.0) && (hue <= 1.0), "hue must be between 0.0 and 1.0, got {}", hue);
+
+        let theta = hue * 2.0 * std::f32::consts::PI;
         let radius = lum;
         let x = radius * theta.cos();
         let y = radius * theta.sin();
@@ -43,34 +94,28 @@ impl Color {
         Vec3A::new(x, y, z)
     }
 
-    pub fn from_vec3a(vec: Vec3A) -> Self {
-        // Convert HSL to RGB
+    pub fn vec3a_to_hsl(vec: Vec3A) -> (f32, f32, f32) {
+        // Convert Vec3A to HSL
         let theta = vec.x.atan2(vec.y);
-        let radius = vec.length();
-        let sat = vec.z;
+        let v_2d = Vec3A::new(vec.x, vec.y, 0.0);
+        let lum = v_2d.length().min(1f32);
+        let sat = vec.z.clamp(0.0, 1.0);
         let hue = theta.rem_euclid(2.0 * std::f32::consts::PI) / (2.0 * std::f32::consts::PI);
-        let lum = radius;
 
-        // Convert to RGB
-        let c = (1.0 - (2.0 * lum - 1.0).abs()) * sat;
-        let x = c * (1.0 - (hue * 6.0 % 2.0 - 1.0).abs());
-        let m = lum - c / 2.0;
-
-        let (r, g, b) = match hue {
-            h if h < 1.0 / 6.0 => (c, x, 0.0),
-            h if h < 2.0 / 6.0 => (x, c, 0.0),
-            h if h < 3.0 / 6.0 => (0.0, c, x),
-            h if h < 4.0 / 6.0 => (0.0, x, c),
-            h if h < 5.0 / 6.0 => (x, 0.0, c),
-            _ => (c, 0.0, x),
-        };
-
-        Color {
-            r: ((r + m) * 255.0).clamp(0.0, 255.0) as u8,
-            g: ((g + m) * 255.0).clamp(0.0, 255.0) as u8,
-            b: ((b + m) * 255.0).clamp(0.0, 255.0) as u8,
+        let mut hue = hue;
+        if hue < 0.0 {
+            hue += 1.0;
+        } else if hue > 1.0 {
+            hue -= 1.0;
         }
+
+        assert!((hue >= 0.0) && (hue <= 1.0), "check internal math in imagetovec::Color::vec3a_to_hsl.\nhue must be between 0.0 and 1.0, got {}", hue);
+        assert!((sat >= 0.0) && (sat <= 1.0), "check internal math in imagetovec::Color::vec3a_to_hsl.\nsat must be between 0.0 and 1.0, got {}", sat);
+        assert!((lum >= 0.0) && (lum <= 1.0), "check internal math in imagetovec::Color::vec3a_to_hsl.\nlum must be between 0.0 and 1.0, got {}", lum);
+
+        (hue, sat, lum)
     }
+
 }
 
 /// Convert an image file to a vector of u8 RGB pixels and return dimensions
