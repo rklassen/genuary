@@ -1,3 +1,5 @@
+![Example Image](example.webp)
+
 ## image and curve info
 
 | Image               | Dimension |
@@ -14,15 +16,15 @@
 | Oscillation Phase   |    5.1980 |           
 | Harmonic            |    1.4928 |           
 
-## evaluator logic
-The evaluator uses this function to determine
-which randomly generated curve is a best fit.
+## perceptual error fn
+The `CurveEvaluator` (transient, not implemented in form yet) uses this
+function to determine which randomly generated curve is a best fit.
 
 Luckily copilot can transpile rust and pseudocode
 apparently pseudocode is syntactically compatible with js
 
-```js
-function error(point, target):
+```js (pseudocode)
+function perceptual_error(point, target):
     hue_error = {
         dot = point.xy.normalized 
             • target.xy.normalized

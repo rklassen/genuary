@@ -3,6 +3,8 @@
 _The error in hue is not intentional, it is _the_ next step in the devlog._
 Lossy image compression using a build-time constant curve function with runtime-constant curve parameters, where each uncompressed input value in rgb or other three-component format is reduced to a single scalar `t`, a unorm or float, that represents that color's position on the curve. In this implementation, the curve is encoded in cylindrical HLS space where hue is angular, lightness is radial, and s is vertical.
 
+[Example usage and details can be found in `example.md`](./example.md)
+
 ## Autopilot Description
 
 This is a working version of a curve3d-based image palette remapper. It uses a 3D parametric curve to generate a palette, then maps each pixel of an input image to the closest color on the curve using a perceptual error function. The result is saved as a new image. The code is modular and ready for further experimentation.
