@@ -84,7 +84,18 @@ fn main() {
         println!("\n{}", best_curve.describe());
         println!("\nSummary: {}", best_curve.summary());
         best_curves.push(best_curve);
+
+        // Save palette grid PNG for each curve
+        let palette_dir = std::path::Path::new("_output/palette");
+        let _ = std::fs::create_dir_all(palette_dir);
+        let palette_path = palette_dir.join(format!("palette-{}.png", i + 1));
+        match best_curves.last().unwrap().to_png(palette_path.clone()) {
+            Ok(_) => println!("✅ Palette PNG saved to {}", palette_path.display()),
+            Err(e) => eprintln!("❌ Failed to save palette PNG: {}", e),
+        }
     }
+
+
 
     for (i, pixels_u8) in pixels_vec.iter().enumerate() {
         let best_curve = &best_curves[i];

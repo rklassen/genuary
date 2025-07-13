@@ -1,5 +1,6 @@
 use glam::Vec3A;
-use std::f32::consts::PI;
+use palette::{Srgb, Hsl};
+use std::{f32::consts::PI, path::PathBuf};
 use rayon::prelude::*;
 use crate::models::imagetovec::Color;
 use std::collections::HashMap;
@@ -14,10 +15,9 @@ pub struct PaletteCurve {
     pub num_points: usize,
     pub amplitude: f32, // Combines amplitude and radius_scale into a single scaling factor
     pub amplitude_phase: f32, // phase shift for amplitude term
+    pub harmonic: f32, // number of cycles per t from 0 to 1
     pub oscilation: f32, // Amplitude of an inner oscillation or secondary circle in the curve's shape.
     pub oscilation_phase: f32, // phase shift for oscilation term
-    pub harmonic: f32, // number of cycles per t from 0 to 1
-    pub z_range: (f32, f32), // z range for the curve
 }
 
 impl Clone for PaletteCurve {
@@ -29,12 +29,17 @@ impl Clone for PaletteCurve {
             oscilation: self.oscilation,
             oscilation_phase: self.oscilation_phase,
             harmonic: self.harmonic,
-            z_range: self.z_range,
         }
     }
 }
 
 impl PaletteCurve {
+    /// Convert RGB u8 to HSL (float) using the palette crate
+    pub fn rgb_u8_to_hsl(r: u8, g: u8, b: u8) -> (f32, f32, f32) {
+        let rgb = Srgb::new(r, g, b).into_format::<f32>().into_linear();
+        let hsl: Hsl = 
+        (hsl.hue.into(), hsl.saturation, hsl.lightness)
+    }
 
     /// Best fit a HashMap of colors with counts to a curve
     /// color_counts is a HashMap mapping colors to their occurrence counts
@@ -58,29 +63,34 @@ impl PaletteCurve {
             );
         }
 
-        let search_range_z = (0.0, 1.0);
-        let search_range_amplitude = (0.0, 1.0);
-        let search_range_amplitude_phase = (0.0, 2.0 * PI);
-        let search_range_oscilation = (-1.0, 2.0);
-        let search_range_oscilation_phase = (0.0, 2.0 * PI);
+        let search_range_amplitude          = (0.1, 1.0);
+        let search_range_amplitude_phase    = (0.0, 2.0 * PI);
+        let search_range_oscilation         = (0.10, 1.0);
+        let search_range_oscilation_phase   = (0.0, 2.0 * PI);
         // harmonic is a random f32 in [0,1]^2 * 8
         let mut rng = rand::thread_rng();
         let mut curves = Vec::with_capacity(SEARCH_DEPTH);
 
         for _ in 0..SEARCH_DEPTH {
-            let amplitude = rng.gen_range(search_range_amplitude.0..=search_range_amplitude.1);
-            let amplitude_phase = rng.gen_range(search_range_amplitude_phase.0..=search_range_amplitude_phase.1);
-            let oscilation = rng.gen_range(search_range_oscilation.0..=search_range_oscilation.1);
-            let oscilation_phase = rng.gen_range(search_range_oscilation_phase.0..=search_range_oscilation_phase.1);
-            
+            let amplitude = rng.gen_range(
+                search_range_amplitude.0..=search_range_amplitude.1
+            );
+            let amplitude_phase = rng.gen_range(
+                search_range_amplitude_phase.0..=search_range_amplitude_phase.1
+            );
+            let oscilation = rng.gen_range(
+                search_range_oscilation.0..=search_range_oscilation.1
+            );
+            let oscilation_phase = rng.gen_range(
+                search_range_oscilation_phase.0..=search_range_oscilation_phase.1,
+            );
+
             let harmonic = {
                 let r = rng.gen_range(0.0..=1.0);
-                let r_squared = r * r;
-                1f32 + r_squared * 7f32 // Scale to [1, 8]
+                let r_squared = r * r * r;
+                0.5f32 + r_squared * 4f32 // Scale to [1, 32]
             };
 
-            let z_min = rng.gen_range(search_range_z.0..=search_range_z.1);
-            let z_max = rng.gen_range(z_min..=search_range_z.1);
             let curve = PaletteCurve::new(
                 num_points,
                 amplitude,
@@ -88,7 +98,6 @@ impl PaletteCurve {
                 oscilation,
                 oscilation_phase,
                 harmonic,
-                (z_min, z_max),
             );
             curves.push(curve);
         }
@@ -133,12 +142,14 @@ impl PaletteCurve {
 
     #[allow(dead_code)]
     /// Sample `n` points along the curve and convert each Vec3A to Color
-    pub fn colors(&self) -> Vec<Color> {
+    pub fn colors_hsl(&self) -> Vec<(Color, (f32, f32, f32))> {
         (0..self.num_points)
             .map(|i| {
                 let t = i as f32 / (self.num_points - 1).max(1) as f32;
                 let vec = self.sample(t);
-                Color::from_vec3a(vec)
+                let color = Color::from_vec3a(vec);
+                let hsl = PaletteCurve::rgb_u8_to_hsl(color.r, color.g, color.b);
+                (color, hsl)
             })
             .collect()
     }
@@ -169,36 +180,44 @@ impl PaletteCurve {
         desc
     }
 
-    /// Get the closest t value on the curve to a given point
-    pub fn get_closest_t(
-        &self,
-        point: &Vec3A,
-    ) -> f32 {
 
-        let closest_t = (0..self.num_points)
-            .map(|i| {
-                let t = i as f32 / self.harmonic as f32;
-                let sample_point = self.sample(t);
-                let distance = sample_point.distance(*point);
-                (t, distance)
-            })
-            .min_by(|a, b| {
-                a.1.partial_cmp(&b.1)
-                    .unwrap_or(std::cmp::Ordering::Equal)
-            })
-            .map(|(t, _)| t)
-            .unwrap_or(0.0);
+    fn error(point: Vec3A, target: Vec3A) -> f32 {
+        
+        let computed_xy = Vec3A::new(point.x, point.y, 0.0);
+        let target_xy = Vec3A::new(target.x, target.y, 0.0);
+        // Compute the angle between computed_xy and target_xy as the hue error
+        let dot = computed_xy.normalize().dot(target_xy.normalize()).clamp(-1.0, 1.0);
+        let hue_error = dot.asin().abs()/PI; // Absolute angle, normalized to [0, 1]
 
-        closest_t
+        let computed_lum = computed_xy.length();
+        let target_lum = target_xy.length();
+        let lum_error = (computed_lum - target_lum).abs();
+
+        let sat_error = (point.z - target.z).abs();
+
+        hue_error + 1.24 * lum_error + 0.64 * sat_error
+
     }
 
+    #[allow(dead_code)]
+    /// Get the closest point on the curve to a given point
     pub fn get_closest_point(
         &self,
         point: &Vec3A,
     ) -> Vec3A {
-        let closest_t = self.get_closest_t(point);
-        self.sample(closest_t)
+        
+        let points = self.points();
+        points
+            .into_iter()
+            .min_by(|a, b| {
+                PaletteCurve::error(*a, *point)
+                    .partial_cmp(&PaletteCurve::error(*b, *point))
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .unwrap_or(Vec3A::ZERO)
+
     }
+
 
     /// calculate error for a HashMap of colors with counts
     pub fn mean_error(
@@ -208,17 +227,16 @@ impl PaletteCurve {
         let mut total_error = 0.0;
         let mut total_count = 0;
 
+        let points = self.points();
+
         for (color, count) in color_counts {
             let vec3a = color.to_vec3a();
-            let closest_point = self.get_closest_point(&vec3a);
-            let distance = closest_point.distance(color.to_vec3a());
-            let error = distance.powi(3);
-            // println!(
-            //     "Color: ({:.3}, {:.3}, {:.3}), Closest Point: ({:.3}, {:.3}, {:.3}), Error: {:.3}",
-            //     vec3a.x, vec3a.y, vec3a.z,
-            //     closest_point.x, closest_point.y, closest_point.z,
-            //     error
-            // );
+
+            let error = points
+                .iter()
+                .map(|p| PaletteCurve::error(*p, vec3a))
+                .fold(f32::MAX, |acc, e| acc.min(e));
+
             total_error += error * (*count as f32);
             total_count += count;
         }
@@ -234,7 +252,6 @@ impl PaletteCurve {
         oscilation: f32,
         oscilation_phase: f32,
         harmonic: f32,
-        z_range: (f32, f32),
     ) -> Self {
         PaletteCurve {
             num_points,
@@ -243,7 +260,6 @@ impl PaletteCurve {
             oscilation,
             oscilation_phase,
             harmonic,
-            z_range,
         }
     }
 
@@ -272,11 +288,11 @@ impl PaletteCurve {
 
         let x = r * theta.cos() * self.amplitude;
         let y = r * theta.sin() * self.amplitude;
-        let z = self.z_range.0 + t * (self.z_range.1 - self.z_range.0);
+        let z = t;
 
         Vec3A::new(
-            x.clamp(0.0, 1.0),
-            y.clamp(0.0, 1.0),
+            x.clamp(-1.0, 1.0),
+            y.clamp(-1.0, 1.0),
             z.clamp(0.0, 1.0),
         )
     }
@@ -285,39 +301,83 @@ impl PaletteCurve {
     /// Get a compact one-line summary
     pub fn summary(&self) -> String {
         format!(
-            "PaletteCurve[pts={}, amp={:.3}, amp_phase={:.3}, osc={:.3}, osc_phase={:.3}, harm={:.3}, z=({:.3},{:.3})]",
+            "PaletteCurve[pts={}, amp={:.3}, amp_phase={:.3}, osc={:.3}, osc_phase={:.3}, harm={:.3}]",
             self.num_points,
             self.amplitude,
             self.amplitude_phase,
             self.oscilation,
             self.oscilation_phase,
             self.harmonic,
-            self.z_range.0,
-            self.z_range.1
         )
     }
+
+    pub fn to_png(
+        &self,
+        pathbuf: PathBuf
+    ) -> Result<(), image::ImageError> {
+
+        use image::{RgbImage, Rgb};
+        let colors_hsl = self.colors_hsl();
+        let grid_size = 16;
+        let square_size = 8;
+        let img_size = grid_size * square_size; // 1024
+        let mut img = RgbImage::new(img_size as u32, img_size as u32);
+
+        for idx in 0..colors_hsl.len().min(grid_size * grid_size) {
+            let (color, _hsl) = &colors_hsl[idx];
+            let gx = idx % grid_size;
+            let gy = idx / grid_size;
+            let x0 = gx * square_size;
+            let y0 = gy * square_size;
+            let rgb = Rgb([color.r, color.g, color.b]);
+            for dy in 0..square_size {
+                for dx in 0..square_size {
+                    img.put_pixel((x0 + dx) as u32, (y0 + dy) as u32, rgb);
+                }
+            }
+        }
+        img.save(pathbuf)?;
+        Ok(())
+    }
+
+    /// Convert a Vec3A to a Color
+    pub fn vec3a_to_hsl(
+        vec: Vec3A
+    ) -> Hsl {
+        // Normalize xy vector
+        let xy = glam::Vec2::new(vec.x, vec.y);
+        // atan2 returns [-PI, PI], map to [0, 1]
+        let direction = xy.clone().normalize_or_zero();
+        let mut hue = direction.y.atan2(direction.x) / (2.0 * std::f32::consts::PI);
+        if hue < 0.0 {
+            hue += 1.0;
+        }
+        // Use z as lightness, and length of xy as saturation
+        let lum = xy.length().clamp(0.0, 1.0);
+        let sat = vec.z.clamp(0.0, 1.0);
+        Hsl::new(hue, sat, lum)
+    }
+
 }
 
 impl fmt::Display for PaletteCurve {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, 
-            "PaletteCurve {{\n\
-            \x20\x20num_points: {},\n\
-            \x20\x20amplitude: {:.4},\n\
-            \x20\x20amplitude_phase: {:.4},\n\
-            \x20\x20oscillation: {:.4},\n\
-            \x20\x20oscillation_phase: {:.4},\n\
-            \x20\x20harmonic: {:.4},\n\
-            \x20\x20z_range: ({:.4}, {:.4})\n\
-            }}",
+            "| Parameter         | Value      |\n\
+            |-------------------|-----------|\n\
+            | num_points        | {}        |\n\
+            | amplitude         | {:.4}     |\n\
+            | amplitude_phase   | {:.4}     |\n\
+            | oscillation       | {:.4}     |\n\
+            | oscillation_phase | {:.4}     |\n\
+            | harmonic          | {:.4}     |\n\
+",
             self.num_points,
             self.amplitude,
             self.amplitude_phase,
             self.oscilation,
             self.oscilation_phase,
             self.harmonic,
-            self.z_range.0,
-            self.z_range.1
         )
     }
 }
@@ -331,7 +391,6 @@ impl fmt::Debug for PaletteCurve {
             .field("oscillation", &self.oscilation)
             .field("oscillation_phase", &self.oscilation_phase)
             .field("harmonic", &self.harmonic)
-            .field("z_range", &self.z_range)
             .finish()
     }
 }

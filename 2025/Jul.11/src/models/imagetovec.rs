@@ -48,7 +48,7 @@ impl Color {
         let theta = vec.x.atan2(vec.y);
         let radius = vec.length();
         let sat = vec.z;
-        let hue = (theta / (2.0 * std::f32::consts::PI)).rem_euclid(1.0);
+        let hue = theta.rem_euclid(2.0 * std::f32::consts::PI) / (2.0 * std::f32::consts::PI);
         let lum = radius;
 
         // Convert to RGB
@@ -66,9 +66,9 @@ impl Color {
         };
 
         Color {
-            r: ((r + m) * 255.0) as u8,
-            g: ((g + m) * 255.0) as u8,
-            b: ((b + m) * 255.0) as u8,
+            r: ((r + m) * 255.0).clamp(0.0, 255.0) as u8,
+            g: ((g + m) * 255.0).clamp(0.0, 255.0) as u8,
+            b: ((b + m) * 255.0).clamp(0.0, 255.0) as u8,
         }
     }
 }
