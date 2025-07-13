@@ -15,6 +15,10 @@ fn main() {
         1.4928,
     );
 
+    // Save palette swatches as PNG
+    let swatch_path = "/Users/richardklassen/Developer/genuary/2025/Jul.11/_output/paletteswatches.png";
+    curve.to_png(PathBuf::from(swatch_path)).expect("Failed to save palette swatches PNG");
+
     // 2. Create palette points
     let palette_points: Vec<Vec3A> = curve.points();
     println!("Generated {} palette points", palette_points.len());
@@ -26,8 +30,19 @@ fn main() {
     println!("Loaded colorwheel.webp: {}x{}", width, height);
 
     // 4. Map each pixel to closest palette point
-    let mut output_pixels = Vec::with_capacity(pixels.len());
-    for rgb in pixels.iter() {
+    use rayon::prelude::*;
+    use indicatif::{ProgressBar, ProgressStyle};
+    let pb = ProgressBar::new(pixels.len() as u64);
+    pb.set_style(
+        ProgressStyle::default_bar()
+            .template("{prefix} [{bar:20.yellow/blue}] {pos}/{len}")
+            .unwrap()
+            .progress_chars("█▉▊▋▌▍▎▏ ")
+    );
+    pb.set_prefix("Mapping pixels");
+
+    let output_pixels: Vec<u8> = pixels.par_iter().flat_map(|rgb| {
+        pb.inc(1);
         let color = Color { r: rgb[0], g: rgb[1], b: rgb[2] };
         let (h, s, l) = color.to_hsl();
         let pixel_vec = Color::to_vec3a(h, s, l);
@@ -41,14 +56,12 @@ fn main() {
             .unwrap_or(&palette_points[0]);
         let (h, s, l) = Color::vec3a_to_hsl(*closest);
         let mapped_color = Color::from_hsl(h, s, l);
-        output_pixels.push(mapped_color.r);
-        output_pixels.push(mapped_color.g);
-        output_pixels.push(mapped_color.b);
-        output_pixels.push(255); // Alpha channel
-    }
+        vec![mapped_color.r, mapped_color.g, mapped_color.b, 255]
+    }).collect();
+    pb.finish_with_message("✓ Complete");
 
     // 5. Save as webp
-    let output_path = "/Users/richardklassen/Developer/genuary/2025/Jul.11/_input/palettewheel.webp";
+    let output_path = "/Users/richardklassen/Developer/genuary/2025/Jul.11/_output/palettewheel.webp";
     models::save_pixels_as_webp(&output_pixels, width, height, output_path, 80.0)
         .expect("Failed to save palettewheel.webp");
     println!("Saved palettewheel.webp");
