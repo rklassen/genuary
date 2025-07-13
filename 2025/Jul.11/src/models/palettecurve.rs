@@ -8,7 +8,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 use std::sync::{Arc, Mutex};
 use rand::Rng;
 
-const SEARCH_DEPTH: usize = 4096; // Number of random curves to generate for curve fitting
+const SEARCH_DEPTH: usize = 8192; // Number of random curves to generate for curve fitting
 
 pub struct PaletteCurve {
     pub num_points: usize,
@@ -35,106 +35,6 @@ impl Clone for PaletteCurve {
 }
 
 impl PaletteCurve {
-    /// Create a new PaletteCurve with the given parameters
-    ///
-    /// - `harmonic`: Number of cycles in the XY plane (frequency)
-    pub fn sample(
-        &self,
-        t: f32,
-    ) -> Vec3A {
-        // theta cycles harmonic times in the XY plane as t goes from 0 to 1
-        let random_scale = rand::random::<f32>() * 1.0 + 0.5; // [0.5, 1.5)
-        let theta = 2.0 * PI * self.harmonic * t * random_scale;
-        let r = self.amplitude * (theta + self.amplitude_phase).sin()
-            + self.oscilation * (self.harmonic * theta + self.oscilation_phase).sin();
-
-        let x = 0.5 + r * theta.cos() * self.amplitude;
-        let y = 0.5 + r * theta.sin() * self.amplitude;
-        let z = self.z_range.0 + t * (self.z_range.1 - self.z_range.0);
-
-        Vec3A::new(
-            x.clamp(0.0, 1.0),
-            y.clamp(0.0, 1.0),
-            z.clamp(0.0, 1.0),
-        )
-    }
-
-    /// Get the closest t value on the curve to a given point
-    pub fn get_closest_t(
-        &self,
-        point: &Vec3A,
-    ) -> f32 {
-
-        let closest_t = (0..self.num_points)
-            .map(|i| {
-                let t = i as f32 / self.harmonic as f32;
-                let sample_point = self.sample(t);
-                let distance = sample_point.distance(*point);
-                (t, distance)
-            })
-            .min_by(|a, b| {
-                a.1.partial_cmp(&b.1)
-                    .unwrap_or(std::cmp::Ordering::Equal)
-            })
-            .map(|(t, _)| t)
-            .unwrap_or(0.0);
-
-        closest_t
-    }
-
-    pub fn get_closest_point(
-        &self,
-        point: &Vec3A,
-    ) -> Vec3A {
-        let closest_t = self.get_closest_t(point);
-        self.sample(closest_t)
-    }
-
-    /// Create a new PaletteCurve with default parameters
-    pub fn new(
-        num_points: usize,
-        amplitude: f32,
-        amplitude_phase: f32,
-        oscilation: f32,
-        oscilation_phase: f32,
-        harmonic: f32,
-        z_range: (f32, f32),
-    ) -> Self {
-        PaletteCurve {
-            num_points,
-            amplitude,
-            amplitude_phase,
-            oscilation,
-            oscilation_phase,
-            harmonic,
-            z_range,
-        }
-    }
-
-    /// calculate error for a HashMap of colors with counts
-    pub fn mean_square_error(
-        &self,
-        color_counts: &HashMap<Color, usize>,
-    ) -> f32 {
-        let mut total_error = 0.0;
-        let mut total_count = 0;
-
-        for (color, count) in color_counts {
-            let vec3a = color.to_vec3a();
-            let closest_point = self.get_closest_point(&vec3a);
-            let error = closest_point.distance_squared(vec3a);
-            // println!(
-            //     "Color: ({:.3}, {:.3}, {:.3}), Closest Point: ({:.3}, {:.3}, {:.3}), Error: {:.3}",
-            //     vec3a.x, vec3a.y, vec3a.z,
-            //     closest_point.x, closest_point.y, closest_point.z,
-            //     error
-            // );
-            total_error += error * (*count as f32);
-            total_count += count;
-        }
-
-        total_error / total_count as f32
-    }
 
     /// Best fit a HashMap of colors with counts to a curve
     /// color_counts is a HashMap mapping colors to their occurrence counts
@@ -147,10 +47,14 @@ impl PaletteCurve {
         for color in color_counts.keys() {
             let vec3a = color.to_vec3a();
             assert!(
-                (0.0..=1.0).contains(&vec3a.x) &&
-                (0.0..=1.0).contains(&vec3a.y) &&
-                (0.0..=1.0).contains(&vec3a.z),
-                "Each color component c must be 0.0 ≤ c ≤ 1.0."
+                (-1.0..=1.0).contains(&vec3a.x) &&
+                (-1.0..=1.0).contains(&vec3a.y),
+                "Each xy value must be -1.0 ≤ c ≤ 1.0, got xy = ({:.3}, {:.3})", vec3a.x, vec3a.y
+            );
+            assert!(
+                0.0 <= vec3a.z &&
+                1.0001 >= vec3a.z,
+                "Z value must be 0.0 ≤ z ≤ 1.0, got z = {:.3}", vec3a.z
             );
         }
 
@@ -205,7 +109,7 @@ impl PaletteCurve {
         let errors: Vec<f32> = curves
             .par_iter()
             .map(|curve| {
-                let error = curve.mean_square_error(color_counts);
+                let error = curve.mean_error(color_counts);
                 // Update progress bar
                 if let Ok(pb) = pb_arc.lock() {
                     pb.inc(1);
@@ -227,25 +131,27 @@ impl PaletteCurve {
         curves[best_index].clone()
     }
 
+
+
     /// Get a detailed multiline description of the curve
     pub fn describe(&self) -> String {
-        let mut desc = format!(
+        let desc = format!(
             "PaletteCurve Analysis:\n\
-┌──────────────────────────────────────────────┐\n\
-│ Parameters:                                 │\n\
-│   • Sample Points:   {:>4}                  │\n\
-│   • Amplitude:      {:>8.4}                 │\n\
-│   • Amplitude Phase:{:>8.4}                 │\n\
-│   • Oscillation:    {:>8.4}                 │\n\
-│   • Oscillation Phase:{:>8.4}               │\n\
-│   • Harmonic:       {:>8.4}                 │\n\
-│   • Z Range:   ({:>7.3}, {:>7.3})           │\n\
-├──────────────────────────────────────────────┤\n\
-│ Curve Properties:                           │\n\
-│   • Z Span:         {:>8.4}                 │\n\
-│   • Frequency:      {:>8.4}                 │\n\
-│   • Complexity:     {:<8}                   │\n\
-└──────────────────────────────────────────────┘\n",
+┌──────────────────────────────────────────────\n\
+│ Parameters:                                 \n\
+│   • Sample Points:      {:>4}               \n\
+│   • Amplitude:          {:>8.4}             \n\
+│   • Amplitude Phase:    {:>8.4}             \n\
+│   • Oscillation:        {:>8.4}             \n\
+│   • Oscillation Phase:  {:>8.4}             \n\
+│   • Harmonic:           {:>8.4}             \n\
+│   • Z Range:     ({:>7.3}, {:>7.3})         \n\
+├──────────────────────────────────────────────\n\
+│ Curve Properties:                           \n\
+│   • Z Span:             {:>8.4}             \n\
+│   • Frequency:          {:>8.4}             \n\
+│   • Complexity:         {:<8}               \n\
+└──────────────────────────────────────────────\n",
             self.num_points,
             self.amplitude,
             self.amplitude_phase,
@@ -261,6 +167,131 @@ impl PaletteCurve {
 
         desc
     }
+
+
+    /// Sample `n` points along the curve and convert each Vec3A to Color
+    pub fn colors(&self) -> Vec<Color> {
+        (0..self.num_points)
+            .map(|i| {
+                let t = i as f32 / (self.num_points - 1).max(1) as f32;
+                let vec = self.sample(t);
+                Color::from_vec3a(vec)
+            })
+            .collect()
+    }
+
+    /// Get the closest t value on the curve to a given point
+    pub fn get_closest_t(
+        &self,
+        point: &Vec3A,
+    ) -> f32 {
+
+        let closest_t = (0..self.num_points)
+            .map(|i| {
+                let t = i as f32 / self.harmonic as f32;
+                let sample_point = self.sample(t);
+                let distance = sample_point.distance(*point);
+                (t, distance)
+            })
+            .min_by(|a, b| {
+                a.1.partial_cmp(&b.1)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .map(|(t, _)| t)
+            .unwrap_or(0.0);
+
+        closest_t
+    }
+
+    pub fn get_closest_point(
+        &self,
+        point: &Vec3A,
+    ) -> Vec3A {
+        let closest_t = self.get_closest_t(point);
+        self.sample(closest_t)
+    }
+
+    /// calculate error for a HashMap of colors with counts
+    pub fn mean_error(
+        &self,
+        color_counts: &HashMap<Color, usize>,
+    ) -> f32 {
+        let mut total_error = 0.0;
+        let mut total_count = 0;
+
+        for (color, count) in color_counts {
+            let vec3a = color.to_vec3a();
+            let closest_point = self.get_closest_point(&vec3a);
+            let distance = closest_point.distance(color.to_vec3a());
+            let error = distance.powi(3);
+            // println!(
+            //     "Color: ({:.3}, {:.3}, {:.3}), Closest Point: ({:.3}, {:.3}, {:.3}), Error: {:.3}",
+            //     vec3a.x, vec3a.y, vec3a.z,
+            //     closest_point.x, closest_point.y, closest_point.z,
+            //     error
+            // );
+            total_error += error * (*count as f32);
+            total_count += count;
+        }
+
+        total_error / total_count as f32
+    }
+
+    /// Create a new PaletteCurve with default parameters
+    pub fn new(
+        num_points: usize,
+        amplitude: f32,
+        amplitude_phase: f32,
+        oscilation: f32,
+        oscilation_phase: f32,
+        harmonic: f32,
+        z_range: (f32, f32),
+    ) -> Self {
+        PaletteCurve {
+            num_points,
+            amplitude,
+            amplitude_phase,
+            oscilation,
+            oscilation_phase,
+            harmonic,
+            z_range,
+        }
+    }
+
+    /// Create points3d, each in radial value, angular color, and z = sat
+    pub fn points(&self) -> Vec<Vec3A> {
+        (0..self.num_points)
+            .map(|i| {
+                let t = i as f32 / (self.num_points - 1).max(1) as f32;
+                self.sample(t)
+            })
+            .collect()
+    }
+
+    /// Create a new PaletteCurve with the given parameters
+    ///
+    /// - `harmonic`: Number of cycles in the XY plane (frequency)
+    pub fn sample(
+        &self,
+        t: f32,
+    ) -> Vec3A {
+        // theta cycles harmonic times in the XY plane as t goes from 0 to 1
+        let random_scale = rand::random::<f32>() * 1.0 + 0.5; // [0.5, 1.5)
+        let theta = 2.0 * PI * self.harmonic * t * random_scale;
+        let r = self.amplitude * (theta + self.amplitude_phase).sin()
+            + self.oscilation * (self.harmonic * theta + self.oscilation_phase).sin();
+
+        let x = r * theta.cos() * self.amplitude;
+        let y = r * theta.sin() * self.amplitude;
+        let z = self.z_range.0 + t * (self.z_range.1 - self.z_range.0);
+
+        Vec3A::new(
+            x.clamp(0.0, 1.0),
+            y.clamp(0.0, 1.0),
+            z.clamp(0.0, 1.0),
+        )
+    }
+
 
     /// Get a compact one-line summary
     pub fn summary(&self) -> String {

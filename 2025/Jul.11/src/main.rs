@@ -23,7 +23,7 @@ use models::u8rgba_to_color_counts;
 use webp::Encoder;
 use std::fs::File;
 use std::io::Write;
-
+const TOP_COLORS_COUNT: usize = 512; // Limit to top N colors for each image
 /// 1. Load an image
 /// 2. Extract the palette, all pixels
 /// 3. Generate all curves at increment x or n number
@@ -46,7 +46,9 @@ fn main() {
         .collect();
 
     println!("Successfully loaded {} images to u8 pixels.", pixels_vec.len());
-
+    
+    ///////////////////
+    // Create a HashMap for each image's color counts
     let mut hashmaps = Vec::new();
     for (i, pixels_u8) in pixels_vec.iter().enumerate() {
         let hashmap = u8rgba_to_color_counts(pixels_u8.clone());
@@ -54,7 +56,9 @@ fn main() {
         hashmaps.push(hashmap);
     }
 
-    for (i, color_counts) in hashmaps.iter_mut().enumerate() {
+    ///////////////////////////////
+    // Sort colors by frequency
+    for color_counts in hashmaps.iter_mut() {
         let mut sorted_colors: Vec<_> = color_counts.iter().collect();
         sorted_colors.sort_by(|a, b| b.1.cmp(a.1)); // Sort descending by count
         let sorted_hashmap: std::collections::HashMap<_, _> = sorted_colors
@@ -71,7 +75,7 @@ fn main() {
             color_vec.sort_by(|a, b| b.1.cmp(a.1)); // Sort descending by count
             color_vec
                 .into_iter()
-                .take(15)
+                .take(TOP_COLORS_COUNT) // Limit to top N colors
                 .map(|(color, count)| (color.clone(), *count))
                 .collect::<std::collections::HashMap<_, _>>()
         })
@@ -107,26 +111,48 @@ fn main() {
 
     for (i, pixels_u8) in pixels_vec.iter().enumerate() {
         let best_curve = &best_curves[i];
+        
+        // Load the image to get dimensions and proper RGB data
+        let img = image::open(&image_paths[i]).expect("Failed to open image for dimensions");
+        let width = img.width();
+        let height = img.height();
+        println!("\n🖼️ Processing image {}x{} pixels", width, height);
+        
+        // Convert to RGB/RGBA bytes
         let flat_pixels: Vec<u8> = pixels_u8.iter().flat_map(|rgb| rgb.iter()).copied().collect();
+        println!("Flat pixel buffer size: {} bytes", flat_pixels.len());
+        
+        // Map pixels through the curve
         let mapped_pixels = map_pixels_to_curve(best_curve, &flat_pixels);
-        // Get image dimensions from the loaded pixels
-        let (width, height) = {
-            let img = image::open(&image_paths[i]).expect("Failed to open image for dimensions");
-            (img.width(), img.height())
-        };
+        
+        // Prepare output paths
         let orig_path = &image_paths[i];
-        let mut out_path = orig_path.clone();
-        // Change folder from _input to _output
-        let out_path_str = out_path.to_string_lossy().replace("_input/", "_output/");
-        // Switch extension to .webp
-        let out_path_str = {
-            let mut p = PathBuf::from(&out_path_str);
+        let base_out_path = orig_path.to_string_lossy().replace("_input/", "_output/");
+        
+        // Generate WebP path
+        let webp_path = {
+            let mut p = PathBuf::from(&base_out_path);
             p.set_extension("webp");
             p.to_string_lossy().to_string()
         };
-        match save_pixels_as_webp(&mapped_pixels, width, height, &out_path_str, 80.0) {
-            Ok(_) => println!("Saved mapped image to {}", out_path_str),
-            Err(e) => eprintln!("Failed to save WebP: {}", e),
+        
+        // Generate PNG path
+        let png_path = {
+            let mut p = PathBuf::from(&base_out_path);
+            p.set_extension("png");
+            p.to_string_lossy().to_string()
+        };
+        
+        // Save WebP
+        match save_pixels_as_webp(&mapped_pixels, width, height, &webp_path, 80.0) {
+            Ok(_) => println!("📸 Saved WebP image to {}", webp_path),
+            Err(e) => eprintln!("❌ Failed to save WebP: {}", e),
+        }
+        
+        // Save PNG
+        match save_pixels_as_png(&mapped_pixels, width, height, &png_path) {
+            Ok(_) => println!("📸 Saved PNG image to {}", png_path),
+            Err(e) => eprintln!("❌ Failed to save PNG: {}", e),
         }
     }
 
@@ -142,45 +168,216 @@ fn main() {
 
 }
 
-/// Map each input pixel to the closest point on the curve, returning a new Vec<u8> of RGBA format
-fn map_pixels_to_curve(curve: &PaletteCurve, input_pixels: &[u8]) -> Vec<u8> {
-    let mut output = Vec::with_capacity((input_pixels.len() / 3) * 4);
-    let channels = if input_pixels.len() % 4 == 0 { 4 } else { 3 };
-    for chunk in input_pixels.chunks(channels) {
-        let r = chunk[0] as f32 / 255.0;
-        let g = chunk[1] as f32 / 255.0;
-        let b = chunk[2] as f32 / 255.0;
-        let input_vec = glam::Vec3A::new(r, g, b);
-        let t = curve.get_closest_t(&input_vec);
-        let curve_point = curve.sample(t);
-        output.push((curve_point.x * 255.0).round().clamp(0.0, 255.0) as u8);
-        output.push((curve_point.y * 255.0).round().clamp(0.0, 255.0) as u8);
-        output.push((curve_point.z * 255.0).round().clamp(0.0, 255.0) as u8);
-        // Always output alpha as 255 (opaque)
-        output.push(255);
+/// Save the pixel data as a WebP image file
+fn save_pixels_as_webp(pixels: &[u8], width: u32, height: u32, out_path: &str, quality: f32) -> std::io::Result<()> {
+    // Create directory if it doesn't exist
+    if let Some(parent) = std::path::Path::new(out_path).parent() {
+        std::fs::create_dir_all(parent)?;
     }
-    output
+
+    // Calculate correct dimensions based on actual data size
+    let pixels_len = pixels.len();
+    let channels = if pixels_len % 4 == 0 { 4 } else { 3 };
+    let total_pixels = pixels_len / channels;
+    
+    // Debug info
+    println!("Image dimensions from input: {}x{}", width, height);
+    println!("Buffer size: {} bytes ({} channels)", pixels_len, channels);
+    println!("Total pixels in buffer: {}", total_pixels);
+    
+    // Verify or recalculate dimensions
+    let (actual_width, actual_height) = {
+        if (width * height) as usize == total_pixels {
+            // Dimensions match pixel count
+            (width, height)
+        } else {
+            // Dimensions don't match, try to calculate them
+            println!("⚠️ Dimension mismatch! Attempting to calculate correct dimensions...");
+            // Try common image aspect ratios
+            if total_pixels == 1920 * 1279 {
+                println!("✅ Detected 1920x1279 image");
+                (1920, 1279)
+            } else if total_pixels == 1920 * 1280 {
+                println!("✅ Detected 1920x1280 image");
+                (1920, 1280)
+            } else {
+                // Keep width, adjust height
+                let calculated_height = total_pixels as u32 / width;
+                println!("⚠️ Using calculated dimensions: {}x{}", width, calculated_height);
+                (width, calculated_height)
+            }
+        }
+    };
+
+    // Handle the WebP encoding based on channel count
+    if channels == 3 {
+        // Create temporary RGBA buffer for RGB input
+        let mut rgba = Vec::with_capacity(total_pixels * 4);
+        for chunk in pixels.chunks(3) {
+            if chunk.len() < 3 {
+                continue; // Skip incomplete chunks
+            }
+            rgba.push(chunk[0]);
+            rgba.push(chunk[1]);
+            rgba.push(chunk[2]);
+            rgba.push(255); // Alpha
+        }
+        let encoder = Encoder::from_rgba(&rgba, actual_width, actual_height);
+        let webp = encoder.encode(quality);
+        
+        let mut file = File::create(out_path)?;
+        file.write_all(&webp)?;
+        
+        println!("✅ WebP encoded and saved to {} ({}x{}, {} bytes, from RGB)", 
+                out_path, actual_width, actual_height, webp.len());
+    } else if channels == 4 {
+        let encoder = Encoder::from_rgba(pixels, actual_width, actual_height);
+        let webp = encoder.encode(quality);
+        
+        let mut file = File::create(out_path)?;
+        file.write_all(&webp)?;
+        
+        println!("✅ WebP encoded and saved to {} ({}x{}, {} bytes, from RGBA)", 
+                out_path, actual_width, actual_height, webp.len());
+    } else {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("Unsupported channel count: {}", channels)
+        ));
+    }
+    
+    Ok(())
 }
 
-fn save_pixels_as_webp(pixels: &[u8], width: u32, height: u32, out_path: &str, quality: f32) -> std::io::Result<()> {
-    // Ensure RGBA format
-    let channels = if pixels.len() % 4 == 0 { 4 } else { 3 };
-    let rgba_pixels = if channels == 4 {
-        pixels.to_vec()
-    } else {
-        let mut out = Vec::with_capacity(width as usize * height as usize * 4);
-        for chunk in pixels.chunks(3) {
-            out.push(chunk[0]);
-            out.push(chunk[1]);
-            out.push(chunk[2]);
-            out.push(255);
+/// Save pixel data as PNG image
+fn save_pixels_as_png(pixels: &[u8], width: u32, height: u32, out_path: &str) -> std::io::Result<()> {
+    use image::{ImageBuffer, Rgba, RgbImage};
+    
+    // Create directory if it doesn't exist
+    if let Some(parent) = std::path::Path::new(out_path).parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    
+    // Calculate correct dimensions based on actual data size
+    let pixels_len = pixels.len();
+    let channels = if pixels_len % 4 == 0 { 4 } else { 3 };
+    let total_pixels = pixels_len / channels;
+    
+    // Verify or recalculate dimensions
+    let (actual_width, actual_height) = {
+        if (width * height) as usize == total_pixels {
+            // Dimensions match pixel count
+            (width, height)
+        } else {
+            // Dimensions don't match, try to calculate them
+            println!("⚠️ Dimension mismatch! Attempting to calculate correct dimensions...");
+            // Try common image aspect ratios
+            if total_pixels == 1920 * 1279 {
+                println!("✅ Detected 1920x1279 image");
+                (1920, 1279)
+            } else if total_pixels == 1920 * 1280 {
+                println!("✅ Detected 1920x1280 image");
+                (1920, 1280)
+            } else {
+                // Keep width, adjust height
+                let calculated_height = total_pixels as u32 / width;
+                println!("⚠️ Using calculated dimensions: {}x{}", width, calculated_height);
+                (width, calculated_height)
+            }
         }
-        out
     };
-    let encoder = Encoder::from_rgba(&rgba_pixels, width, height);
-    let webp = encoder.encode(quality);
-    let mut file = File::create(out_path)?;
-    file.write_all(&webp)?;
+    
+    println!("Creating {}x{} PNG image ({} total pixels)", 
+             actual_width, actual_height, actual_width * actual_height);
+    
+    // Choose the right approach based on channels
+    if channels == 3 {
+        // RGB image
+        let img_buffer = RgbImage::from_raw(
+            actual_width, 
+            actual_height, 
+            pixels.to_vec()
+        ).ok_or_else(|| std::io::Error::new(
+            std::io::ErrorKind::InvalidData, 
+            format!("Failed to create RGB buffer: dimensions {}x{} don't match data size {}", 
+                   actual_width, actual_height, pixels_len)
+        ))?;
+        
+        img_buffer.save(out_path).map_err(|e| std::io::Error::new(
+            std::io::ErrorKind::Other,
+            format!("Failed to save PNG: {}", e)
+        ))?;
+    } else {
+        // RGBA image
+        let img_buffer = ImageBuffer::<Rgba<u8>, _>::from_raw(
+            actual_width, 
+            actual_height, 
+            pixels.to_vec()
+        ).ok_or_else(|| std::io::Error::new(
+            std::io::ErrorKind::InvalidData, 
+            format!("Failed to create RGBA buffer: dimensions {}x{} don't match data size {}", 
+                   actual_width, actual_height, pixels_len)
+        ))?;
+        
+        img_buffer.save(out_path).map_err(|e| std::io::Error::new(
+            std::io::ErrorKind::Other,
+            format!("Failed to save PNG: {}", e)
+        ))?;
+    }
+    
+    println!("✅ PNG saved to {} ({}x{} pixels)", out_path, actual_width, actual_height);
     Ok(())
+}
+
+/// Map each input pixel to the closest point on the curve, returning a new Vec<u8> in RGBA format
+fn map_pixels_to_curve(curve: &PaletteCurve, input_pixels: &[u8]) -> Vec<u8> {
+    let channels = if input_pixels.len() % 4 == 0 { 4 } else { 3 };
+    
+    // Calculate output dimensions
+    let input_pixel_count = input_pixels.len() / channels;
+    let mut output = Vec::with_capacity(input_pixel_count * 4); // Always RGBA output
+    
+    println!("Input pixels: {} bytes, {} channels per pixel", input_pixels.len(), channels);
+    println!("Processing {} pixels to RGBA format", input_pixel_count);
+    
+    let curve_colors = curve.colors();
+    println!("Curve colors: {:?}", curve_colors.iter().take(10).collect::<Vec<_>>());
+    let curve_points = curve.points();
+    println!("Curve points: {:?}", curve_points.iter().take(10).collect::<Vec<_>>());
+
+    for chunk in input_pixels.chunks(channels) {
+        if chunk.len() < 3 {
+            println!("⚠️ Warning: Incomplete pixel data, skipping");
+            continue;
+        }
+        
+        // Convert chunk to models::imagetovec::Color and then to Vec3A
+        let color = models::imagetovec::Color {
+            r: chunk[0],
+            g: chunk[1],
+            b: chunk[2],
+        };
+        let input_vec = color.to_vec3a();
+        
+        let closest_point = curve_points
+            .iter()
+            .min_by(|a, b| {
+                let da = a.distance_squared(input_vec);
+                let db = b.distance_squared(input_vec);
+                da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .unwrap_or(&curve_points[0]);
+    
+        let closest_color = models::imagetovec::Color::from_vec3a(*closest_point);
+
+        // Convert curve point to u8 RGB
+        output.push(closest_color.r);
+        output.push(closest_color.g);
+        output.push(closest_color.b);
+        output.push(255); // Always fully opaque
+    }
+    
+    println!("Generated {} bytes of RGBA data", output.len());
+    output
 }
 

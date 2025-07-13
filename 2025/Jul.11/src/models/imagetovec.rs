@@ -11,11 +11,65 @@ pub struct Color {
 
 impl Color {
     pub fn to_vec3a(&self) -> Vec3A {
-        Vec3A::new(
-            self.r as f32 / 255.0,
-            self.g as f32 / 255.0,
-            self.b as f32 / 255.0,
-        )
+        // Convert RGB to floats in [0,1]
+        let r = self.r as f32 / 255.0;
+        let g = self.g as f32 / 255.0;
+        let b = self.b as f32 / 255.0;
+        // Convert to HSL
+        let max = r.max(g).max(b);
+        let min = r.min(g).min(b);
+        let lum = (max + min) / 2.0;
+        let delta = max - min;
+        let sat = {
+            if delta == 0.0 { 0.0 }
+            else { delta / (1.0 - (2.0 * lum - 1.0).abs()) }
+        };
+        let hue = if delta == 0.0 {
+            0.0
+        } else {
+            match max {
+            _ if max == r => 60.0 * ((g - b) / delta).rem_euclid(6.0),
+            _ if max == g => 60.0 * ((b - r) / delta + 2.0),
+            _ => 60.0 * ((r - g) / delta + 4.0),
+            }
+        };
+        // Normalize hue to [0,1]
+        let hue_norm = ((hue / 360.0) + 1.0) % 1.0;
+        let theta = hue_norm * 2.0 * std::f32::consts::PI;
+        let radius = lum;
+        let x = radius * theta.cos();
+        let y = radius * theta.sin();
+        let z = sat;
+        Vec3A::new(x, y, z)
+    }
+
+    pub fn from_vec3a(vec: Vec3A) -> Self {
+        // Convert HSL to RGB
+        let theta = vec.x.atan2(vec.y);
+        let radius = vec.length();
+        let sat = vec.z;
+        let hue = (theta / (2.0 * std::f32::consts::PI)).rem_euclid(1.0);
+        let lum = radius;
+
+        // Convert to RGB
+        let c = (1.0 - (2.0 * lum - 1.0).abs()) * sat;
+        let x = c * (1.0 - (hue * 6.0 % 2.0 - 1.0).abs());
+        let m = lum - c / 2.0;
+
+        let (r, g, b) = match hue {
+            h if h < 1.0 / 6.0 => (c, x, 0.0),
+            h if h < 2.0 / 6.0 => (x, c, 0.0),
+            h if h < 3.0 / 6.0 => (0.0, c, x),
+            h if h < 4.0 / 6.0 => (0.0, x, c),
+            h if h < 5.0 / 6.0 => (x, 0.0, c),
+            _ => (c, 0.0, x),
+        };
+
+        Color {
+            r: ((r + m) * 255.0) as u8,
+            g: ((g + m) * 255.0) as u8,
+            b: ((b + m) * 255.0) as u8,
+        }
     }
 }
 
