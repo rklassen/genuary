@@ -131,27 +131,37 @@ impl PaletteCurve {
         curves[best_index].clone()
     }
 
-
+    #[allow(dead_code)]
+    /// Sample `n` points along the curve and convert each Vec3A to Color
+    pub fn colors(&self) -> Vec<Color> {
+        (0..self.num_points)
+            .map(|i| {
+                let t = i as f32 / (self.num_points - 1).max(1) as f32;
+                let vec = self.sample(t);
+                Color::from_vec3a(vec)
+            })
+            .collect()
+    }
 
     /// Get a detailed multiline description of the curve
     pub fn describe(&self) -> String {
         let desc = format!(
             "PaletteCurve Analysis:\n\
-┌──────────────────────────────────────────────\n\
-│ Parameters:                                 \n\
-│   • Sample Points:      {:>4}               \n\
-│   • Amplitude:          {:>8.4}             \n\
-│   • Amplitude Phase:    {:>8.4}             \n\
-│   • Oscillation:        {:>8.4}             \n\
-│   • Oscillation Phase:  {:>8.4}             \n\
-│   • Harmonic:           {:>8.4}             \n\
-│   • Z Range:     ({:>7.3}, {:>7.3})         \n\
-├──────────────────────────────────────────────\n\
-│ Curve Properties:                           \n\
-│   • Z Span:             {:>8.4}             \n\
-│   • Frequency:          {:>8.4}             \n\
-│   • Complexity:         {:<8}               \n\
-└──────────────────────────────────────────────\n",
+──────────────────────────────────────────────\n\
+ Parameters:                                 \n\
+   • Sample Points:      {:>4}               \n\
+   • Amplitude:          {:>8.4}             \n\
+   • Amplitude Phase:    {:>8.4}             \n\
+   • Oscillation:        {:>8.4}             \n\
+   • Oscillation Phase:  {:>8.4}             \n\
+   • Harmonic:           {:>8.4}             \n\
+   • Z Range:     ({:>7.3}, {:>7.3})         \n\
+──────────────────────────────────────────────\n\
+ Curve Properties:                           \n\
+   • Z Span:             {:>8.4}             \n\
+   • Frequency:          {:>8.4}             \n\
+   • Complexity:         {:<8}               \n\
+──────────────────────────────────────────────\n",
             self.num_points,
             self.amplitude,
             self.amplitude_phase,
@@ -166,18 +176,6 @@ impl PaletteCurve {
         );
 
         desc
-    }
-
-
-    /// Sample `n` points along the curve and convert each Vec3A to Color
-    pub fn colors(&self) -> Vec<Color> {
-        (0..self.num_points)
-            .map(|i| {
-                let t = i as f32 / (self.num_points - 1).max(1) as f32;
-                let vec = self.sample(t);
-                Color::from_vec3a(vec)
-            })
-            .collect()
     }
 
     /// Get the closest t value on the curve to a given point

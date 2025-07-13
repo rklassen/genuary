@@ -93,21 +93,6 @@ fn main() {
         println!("Color Frequency Histogram for Image {}:", i + 1);
         print_color_histogram(color_counts);
         let best_curve = PaletteCurve::best_fit(color_counts, 255);
-        println!("Randomized 1 curves for evaluation.");
-        println!("Evaluating [████████████████████] 1/1");
-        // println!("{:<25} {:<35} {:<10}", "Color", "Closest Point", "Error");
-        // println!("{:-<25} {:-<35} {:-<10}", "", "", "");
-        // for (color, _) in color_counts.iter() {
-            // let vec3a = color.to_vec3a();
-            // let closest_point = best_curve.get_closest_point(&vec3a);
-            // let error = best_curve.sample(0.0).distance_squared(vec3a); // Or use best_curve.mean_square_error for all
-            // println!(
-            //     "{:>3},{:>3},{:>3}   {:>10.6}, {:>10.6}, {:>10.6}   {:>10.6}",
-            //     color.r, color.g, color.b,
-            //     closest_point.x, closest_point.y, closest_point.z,
-            //     error
-            // );
-        // } /
         println!("✅ Best fit curve found for Image {}", i + 1);
         println!("\n{}", best_curve.describe());
         println!("\nSummary: {}", best_curve.summary());
@@ -329,6 +314,10 @@ fn map_pixels_to_curve(curve: &PaletteCurve, input_pixels: &[u8]) -> Vec<u8> {
     
     let curve_points = curve.points();
 
+    let bar_width = 24;
+    let update_every = (input_pixel_count / bar_width).max(1);
+    // Magenta color ANSI escape code
+    print!("\x1b[35mConverting pixels [");
     for chunk in input_pixels.chunks(channels) {
         if chunk.len() < 3 {
             println!("⚠️ Warning: Incomplete pixel data, skipping");
@@ -346,8 +335,8 @@ fn map_pixels_to_curve(curve: &PaletteCurve, input_pixels: &[u8]) -> Vec<u8> {
         let closest_point = curve_points
             .iter()
             .min_by(|a, b| {
-                let da = a.distance_squared(input_vec);
-                let db = b.distance_squared(input_vec);
+                let da = (input_vec - **a).length_squared();
+                let db = (input_vec - **b).length_squared();
                 da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
             })
             .unwrap_or(&curve_points[0]);
@@ -359,7 +348,12 @@ fn map_pixels_to_curve(curve: &PaletteCurve, input_pixels: &[u8]) -> Vec<u8> {
         output.push(closest_color.g);
         output.push(closest_color.b);
         output.push(255); // Always fully opaque
+        if output.len() / 4 % update_every == 0 {
+            print!("█"); // Unicode block, will be magenta due to ANSI code
+            std::io::Write::flush(&mut std::io::stdout()).ok();
+        }
     }
+    println!("]\x1b[0m"); // Reset color after bar
     
     println!("Generated {} bytes of RGBA data", output.len());
     output
