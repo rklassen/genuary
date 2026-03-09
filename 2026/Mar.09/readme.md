@@ -16,4 +16,7 @@ python mar09_cmyk_morton_gabor.py input\*.jpg --output-dir output
 Optional controls:
 - `--gabor-strength` (default `0.18`)
 - `--gabor-freq` (default `0.018`)
-- `--gabor-sigma-scale` (default `0.45`)
+- `--gabor-sigma-scale` (default `0.03125` (1/32))
+
+
+

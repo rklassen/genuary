@@ -109,6 +109,17 @@ def dither_channel_morton_8x8(
     return out
 
 
+def infer_short_name(input_path: Path) -> str:
+    stem = input_path.stem.lower()
+    if "cheetah" in stem:
+        return "cheetah"
+    if "tenerife" in stem:
+        return "tenerife"
+
+    token = "".join(ch if ch.isalnum() else "-" for ch in stem).strip("-")
+    return token or "image"
+
+
 def process_image(
     input_path: Path,
     output_path: Path,
@@ -199,13 +210,13 @@ def main() -> None:
     parser.add_argument(
         "--gabor-sigma-scale",
         type=float,
-        default=0.45,
+        default=0.03125,
         help="Gaussian sigma as fraction of min(image width,height)",
     )
     args = parser.parse_args()
 
     for input_path in args.inputs:
-        out_name = f"{input_path.stem}_half_morton_cmyk_gabor_staggered.png"
+        out_name = f"{infer_short_name(input_path)}-morton-gabor.png"
         output_path = args.output_dir / out_name
         process_image(
             input_path=input_path,
@@ -218,3 +229,7 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+
+
