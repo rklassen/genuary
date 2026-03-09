@@ -1,5 +1,8 @@
 import numpy
 from matplotlib import pyplot
+from openpyxl import Workbook
+from numpy.polynomial.polynomial import Polynomial
+
 
 def plot_quantization_surface(quant_levels, title, filename, fontname='General Sans'):
     
@@ -105,6 +108,24 @@ if __name__ == "__main__":
     luminance_levels = quantization_levels(LUMINANCE_QUANT_TABLE)
     chrominance_levels = quantization_levels(CHROMINANCE_QUANT_TABLE)
 
+    def save_to_excel(luminance, chrominance, filename):
+        wb = Workbook()
+        luminance_sheet = wb.active
+        luminance_sheet.title = "Luminance Levels"
+
+        # Write luminance levels
+        for row in luminance:
+            luminance_sheet.append(row)
+
+        # Create chrominance sheet and write chrominance levels
+        chrominance_sheet = wb.create_sheet(title="Chrominance Levels")
+        for row in chrominance:
+            chrominance_sheet.append(row)
+
+        wb.save(filename)
+
+    save_to_excel(luminance_levels, chrominance_levels, "./2025/Apr.01/values.xlsx")
+
     print("\nLuminance Quantization Levels:")
     for row in luminance_levels:
         print(" ".join(f"{value:5.1f}" for value in row))
@@ -115,3 +136,50 @@ if __name__ == "__main__":
 
     plot_quantization_surface(luminance_levels, "Number of Luma Quantization Levels", "./2025/Apr.01/luma.webp")
     plot_quantization_surface(chrominance_levels, "Number of Chroma Quantization Levels", "./2025/Apr.01/chroma.webp")
+
+
+
+    # POLYNOMIAL APPROXIMATION
+
+    def fit_polynomial_approximation(levels, degree):
+        s = numpy.arange(len(levels[0]))
+        t = numpy.arange(len(levels))
+        s, t = numpy.meshgrid(s, t)
+        s = s.flatten()
+        t = t.flatten()
+        z = numpy.array(levels).flatten()
+
+        # Fit a polynomial of the given degree
+        # Custom implementation of 2D polynomial fitting
+        def polyfit2d(x, y, z, degree):
+            import itertools
+            # Generate polynomial terms
+            terms = [(i, j) for i in range(degree + 1) for j in range(degree + 1 - i)]
+            A = numpy.zeros((x.size, len(terms)))
+            for index, (i, j) in enumerate(terms):
+                A[:, index] = (x**i) * (y**j)
+            coeffs, _, _, _ = numpy.linalg.lstsq(A, z, rcond=None)
+            return coeffs, terms
+
+        coeffs, terms = polyfit2d(s, t, z, degree)
+        return coeffs
+
+    def evaluate_polynomial(coeffs, s, t):
+        return numpy.polynomial.polynomial.polyval2d(s, t, coeffs)
+
+    # Fit a polynomial to the chrominance quantization levels
+    degree = 3  # Adjust the degree as needed
+    coeffs = fit_polynomial_approximation(chrominance_levels, degree)
+
+    # Evaluate the polynomial approximation
+    s = numpy.arange(len(chrominance_levels[0]))
+    t = numpy.arange(len(chrominance_levels))
+    s, t = numpy.meshgrid(s, t)
+    approx_levels = evaluate_polynomial(coeffs, s, t)
+
+    # Calculate the mean squared error manually
+    mse = numpy.mean((numpy.array(chrominance_levels).flatten() - approx_levels.flatten()) ** 2)
+    print(f"Mean Squared Error of Polynomial Approximation: {mse:.4f}")
+
+    print("\nPolynomial Coefficients:")
+    print(coeffs)
