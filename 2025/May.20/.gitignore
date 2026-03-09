@@ -1,0 +1,9 @@
+# Ignore frames directory and all its contents
+frames/
+frames/*
+
+# Ignore PNG output directory
+png/
+
+# Ignore output directory
+_output/
